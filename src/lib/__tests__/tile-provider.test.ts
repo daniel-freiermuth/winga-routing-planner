@@ -1,3 +1,4 @@
+// Unit tests for tilesForBbox: tile coverage of normal and antimeridian-crossing bounding boxes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tilesForBbox } from '../tile-provider';
@@ -7,18 +8,17 @@ import { tilesForBbox } from '../tile-provider';
 // A bbox crossing the antimeridian (lonMin=170, lonMax=-170) must include
 // tiles on both sides: at minimum x=7 (eastern) and x=0 (western).
 
-void test('tilesForBbox: normal bbox returns expected tiles', () => {
-  const tiles = tilesForBbox({ latMin: 30, latMax: 40, lonMin: 0, lonMax: 45 }, 3);
-  assert.ok(tiles.length > 0, 'normal bbox should return tiles');
-  // lon 0–45 at z=3 → x=4 only (tiles are 45° wide)
-  assert.ok(tiles.some(t => t.x === 4), 'should include tile x=4');
+void test('tilesForBbox: normal bbox returns exactly the covering tiles', () => {
+  // lon 0–40 at z=3 → x=4 only (tiles are 45° wide); lat 30–40 → y=3 only.
+  const tiles = tilesForBbox({ latMin: 30, latMax: 40, lonMin: 0, lonMax: 40 }, 3);
+  assert.deepStrictEqual(tiles, [{ x: 4, y: 3 }]);
 });
 
 void test('tilesForBbox: antimeridian-crossing bbox returns tiles on both sides', () => {
   // lonMin=170 (east of antimeridian), lonMax=-170 (west of antimeridian)
   const tiles = tilesForBbox({ latMin: 30, latMax: 40, lonMin: 170, lonMax: -170 }, 3);
-  assert.ok(tiles.length > 0, `antimeridian-crossing bbox must return tiles, got ${tiles.length}`);
-  const xs = new Set(tiles.map(t => t.x));
+  assert.ok(tiles.length > 0, `antimeridian-crossing bbox must return tiles, got ${String(tiles.length)}`);
+  const xs = new Set(tiles.map((t) => t.x));
   assert.ok(xs.has(7), 'must include tile x=7 (170°E side)');
   assert.ok(xs.has(0), 'must include tile x=0 (-170°W side)');
 });
@@ -29,5 +29,14 @@ void test('tilesForBbox: antimeridian-crossing bbox tile count is correct', () =
   // latMin=30 → y=3, latMax=40 → y=3 → 1 y-tile.
   // Total: 2 × 1 = 2 tiles.
   const tiles = tilesForBbox({ latMin: 30, latMax: 40, lonMin: 170, lonMax: -170 }, 3);
-  assert.strictEqual(tiles.length, 2, `expected 2 tiles, got ${tiles.length}`);
+  assert.strictEqual(tiles.length, 2, `expected 2 tiles, got ${String(tiles.length)}`);
+});
+
+void test('tilesForBbox: antimeridian-crossing bbox with both edges in one tile column covers all columns', () => {
+  // lonMin=-150 and lonMax=-160 both map to x=0, but the bbox spans 350° across the antimeridian.
+  const tiles = tilesForBbox({ latMin: 30, latMax: 40, lonMin: -150, lonMax: -160 }, 3);
+  assert.deepStrictEqual(
+    tiles.map((t) => t.x),
+    [0, 1, 2, 3, 4, 5, 6, 7],
+  );
 });

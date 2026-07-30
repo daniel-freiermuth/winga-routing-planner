@@ -100,8 +100,14 @@ function closestStepIdx(steps: { iso: string; compact: string }[], targetMs: num
 export function tilesForBbox(bbox: BoundingBox, z: number): { x: number; y: number }[] {
   const tl = latLonToTile(bbox.latMax, bbox.lonMin, z);
   const br = latLonToTile(bbox.latMin, bbox.lonMax, z);
+  const n = 2 ** z;
+  // lonMin > lonMax means the bbox crosses the antimeridian; wrap x through the tile count.
+  // Both edges may fall in the same tile column (e.g. -150..-160), so tile indices alone cannot detect the crossing.
+  const crossesAntimeridian = bbox.lonMin > bbox.lonMax;
+  const xCount = crossesAntimeridian ? Math.min(n, n - tl.x + br.x + 1) : br.x - tl.x + 1;
   const tiles: { x: number; y: number }[] = [];
-  for (let x = tl.x; x <= br.x; x++) {
+  for (let i = 0; i < xCount; i++) {
+    const x = (tl.x + i) % n;
     for (let y = tl.y; y <= br.y; y++) {
       tiles.push({ x, y });
     }
