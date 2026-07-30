@@ -167,10 +167,14 @@ async function sampleOverlayGrid(
   // Determine which tiles cover the bbox
   const tl = latLonToTile(bbox.latMax, bbox.lonMin, ZOOM);
   const br = latLonToTile(bbox.latMin, bbox.lonMax, ZOOM);
+  const n = 2 ** ZOOM;
+  // When tl.x > br.x the bbox crosses the antimeridian: wrap x through the tile count.
+  const xCount = tl.x <= br.x ? br.x - tl.x + 1 : n - tl.x + br.x + 1;
 
   // Pre-fetch all needed tiles in parallel
   const tilePromises = new Map<string, Promise<{ rgba: Uint8Array; header: WindyTileHeader } | null>>();
-  for (let tx = tl.x; tx <= br.x; tx++) {
+  for (let i = 0; i < xCount; i++) {
+    const tx = (tl.x + i) % n;
     for (let ty = tl.y; ty <= br.y; ty++) {
       const url = buildTileUrl(model, modelRun, validTime, ZOOM, tx, ty, overlay, 'surface', isPng ? 'png' : 'jpg');
       if (!tilePromises.has(`${String(tx)}/${String(ty)}`)) {
