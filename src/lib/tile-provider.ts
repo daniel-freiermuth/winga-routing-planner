@@ -97,7 +97,7 @@ function closestStepIdx(steps: { iso: string; compact: string }[], targetMs: num
 }
 
 /** Determine all tile coordinates at zoom z that cover a bounding box. */
-function tilesForBbox(bbox: BoundingBox, z: number): { x: number; y: number }[] {
+export function tilesForBbox(bbox: BoundingBox, z: number): { x: number; y: number }[] {
   const tl = latLonToTile(bbox.latMax, bbox.lonMin, z);
   const br = latLonToTile(bbox.latMin, bbox.lonMax, z);
   const tiles: { x: number; y: number }[] = [];
