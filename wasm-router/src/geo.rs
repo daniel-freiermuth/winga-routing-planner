@@ -27,6 +27,12 @@ pub fn bearing_to(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     (y.atan2(x) * RAD_TO_DEG + 360.0) % 360.0
 }
 
+/// Normalize a longitude to [-180, 180].
+#[inline]
+pub fn wrap_lon(lon: f64) -> f64 {
+    (lon + 180.0).rem_euclid(360.0) - 180.0
+}
+
 /// Destination point given start, distance (nm), and bearing (degrees).
 pub fn destination_point(lat: f64, lon: f64, dist_nm: f64, bearing_deg: f64) -> (f64, f64) {
     let d = dist_nm / NM_PER_RAD; // angular distance in radians
@@ -36,7 +42,7 @@ pub fn destination_point(lat: f64, lon: f64, dist_nm: f64, bearing_deg: f64) -> 
     let new_lat = (lat1.sin() * d.cos() + lat1.cos() * d.sin() * brng.cos()).asin();
     let new_lon =
         lon1 + (brng.sin() * d.sin() * lat1.cos()).atan2(d.cos() - lat1.sin() * new_lat.sin());
-    (new_lat * RAD_TO_DEG, new_lon * RAD_TO_DEG)
+    (new_lat * RAD_TO_DEG, wrap_lon(new_lon * RAD_TO_DEG))
 }
 
 /// Wind speed in knots from u/v components (m/s).
@@ -48,4 +54,56 @@ pub fn wind_speed_knots(u: f64, v: f64) -> f64 {
 pub fn wind_direction(u: f64, v: f64) -> f64 {
     // atan2(-u, -v) gives the direction wind blows FROM
     ((-u).atan2(-v) * RAD_TO_DEG + 360.0) % 360.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn destination_point_wraps_longitude_eastward() {
+        // 120 nm due east from 179°E — should wrap to negative longitude.
+        let (lat, lon) = destination_point(0.0, 179.0, 120.0, 90.0);
+        assert!(
+            lon >= -180.0 && lon <= 180.0,
+            "longitude must be in [-180, 180], got {lon}"
+        );
+        assert!(
+            lon < 0.0,
+            "120 nm east from 179°E crosses antimeridian, got {lon}"
+        );
+        assert!(
+            (lon - (-179.0)).abs() < 0.1,
+            "expected lon ≈ -179°, got {lon}"
+        );
+        assert!(
+            lat.abs() < 1.0,
+            "near-equatorial start should stay near equator, got {lat}"
+        );
+    }
+
+    #[test]
+    fn destination_point_wraps_longitude_westward() {
+        // 120 nm due west from 179°W — should wrap to positive longitude.
+        let (_lat, lon) = destination_point(0.0, -179.0, 120.0, 270.0);
+        assert!(
+            lon >= -180.0 && lon <= 180.0,
+            "longitude must be in [-180, 180], got {lon}"
+        );
+        assert!(
+            lon > 0.0,
+            "120 nm west from 179°W crosses antimeridian, got {lon}"
+        );
+        assert!((lon - 179.0).abs() < 0.1, "expected lon ≈ 179°, got {lon}");
+    }
+
+    #[test]
+    fn wrap_lon_large_negative() {
+        // Values below -540 broke the previous (lon + 540) % 360 formula
+        // because Rust's `%` preserves the sign of the dividend.
+        assert_eq!(wrap_lon(-541.0), 179.0);
+        assert_eq!(wrap_lon(-900.0), -180.0);
+        assert_eq!(wrap_lon(-180.0), -180.0);
+        assert_eq!(wrap_lon(180.0), -180.0);
+    }
 }

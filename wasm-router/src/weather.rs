@@ -228,6 +228,18 @@ impl WeatherStore {
 }
 
 #[cfg(test)]
+impl WeatherStore {
+    fn frame_count(&self) -> usize {
+        self.frames.len()
+    }
+    fn time_range(&self) -> Option<(f64, f64)> {
+        let first = self.frames.first()?.time_ms;
+        let last = self.frames.last()?.time_ms;
+        Some((first, last))
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
