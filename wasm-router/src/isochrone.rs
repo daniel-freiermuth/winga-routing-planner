@@ -2,7 +2,9 @@
 // This is the hot loop that benefits from WASM: O(frontier × headings × steps) of
 // trig, polar lookup, and candidate pruning.
 
-use crate::geo::{bearing_to, destination_point, haversine_nm, wind_direction, wind_speed_knots};
+use crate::geo::{
+    bearing_to, destination_point, haversine_nm, wind_direction, wind_speed_knots, wrap_lon,
+};
 use crate::land::LandIndex;
 use crate::polar::PolarData;
 use crate::weather::WeatherStore;
@@ -338,6 +340,7 @@ impl LegState {
                     let dt_s = dt_hours * 3600.0;
                     new_lat += (cur.1 * dt_s) / (1852.0 * 60.0);
                     new_lon += (cur.0 * dt_s) / (1852.0 * 60.0 * (pt_lat * DEG_TO_RAD).cos());
+                    new_lon = wrap_lon(new_lon);
                 }
 
                 // Coverage check

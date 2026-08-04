@@ -382,6 +382,17 @@ impl LandIndex {
     }
 }
 
+#[cfg(test)]
+impl LandIndex {
+    fn empty() -> Self {
+        Self {
+            polygons: Vec::new(),
+            edge_grid: HashMap::new(),
+            poly_grid: HashMap::new(),
+        }
+    }
+}
+
 // ── tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
