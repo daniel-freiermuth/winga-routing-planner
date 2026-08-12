@@ -249,16 +249,14 @@ impl LegState {
                 };
                 // Heading-change constraint (same as regular loop, line 302-307)
                 let direct_ok = if pt_has_parent {
-                    let delta =
-                        ((pt_to_dest - pt_ctw + 180.0 + 360.0) % 360.0 - 180.0).abs();
+                    let delta = ((pt_to_dest - pt_ctw + 180.0 + 360.0) % 360.0 - 180.0).abs();
                     delta <= config.max_heading_change
                 } else {
                     true
                 };
                 // Tack penalty (same as regular loop, line 346-351)
                 let penalty_h = if config.tack_penalty_sec > 0.0 && pt_has_parent {
-                    let ctw_change =
-                        ((pt_to_dest - pt_ctw + 180.0 + 360.0) % 360.0 - 180.0).abs();
+                    let ctw_change = ((pt_to_dest - pt_ctw + 180.0 + 360.0) % 360.0 - 180.0).abs();
                     if ctw_change > config.tack_threshold_deg {
                         config.tack_penalty_sec / 3600.0
                     } else {
