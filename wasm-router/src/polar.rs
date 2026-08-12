@@ -30,6 +30,12 @@ impl PolarData {
         // Clamp TWA to 0–180
         let twa = twa.clamp(0.0, 180.0);
 
+        // Below the polar's minimum close-hauled angle the boat cannot make
+        // progress against the wind.
+        if twa < self.twa[0] {
+            return 0.0;
+        }
+
         // Find TWA bracket
         let (twa_lo, twa_hi, twa_frac) = Self::bracket(&self.twa, twa);
 
