@@ -247,11 +247,32 @@ impl LegState {
                 } else {
                     direct_speed
                 };
-                if eff >= config.min_boat_speed
-                    && eff * dt_hours >= dist_to_dest
+                // Heading-change constraint (same as regular loop, line 302-307)
+                let direct_ok = if pt_has_parent {
+                    let delta =
+                        ((pt_to_dest - pt_ctw + 180.0 + 360.0) % 360.0 - 180.0).abs();
+                    delta <= config.max_heading_change
+                } else {
+                    true
+                };
+                // Tack penalty (same as regular loop, line 346-351)
+                let penalty_h = if config.tack_penalty_sec > 0.0 && pt_has_parent {
+                    let ctw_change =
+                        ((pt_to_dest - pt_ctw + 180.0 + 360.0) % 360.0 - 180.0).abs();
+                    if ctw_change > config.tack_threshold_deg {
+                        config.tack_penalty_sec / 3600.0
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                };
+                if direct_ok
+                    && eff >= config.min_boat_speed
+                    && eff * (dt_hours - penalty_h).max(0.0) >= dist_to_dest
                     && !land.segment_crosses_land(pt_lat, pt_lon, end_lat, end_lon)
                 {
-                    let travel_h = dist_to_dest / eff;
+                    let travel_h = dist_to_dest / eff + penalty_h;
                     let arrival_ms = self.current_time_ms + travel_h * 3_600_000.0;
                     let arr_idx = self.arena.len();
                     self.arena.push(IsoPoint {
