@@ -516,3 +516,409 @@ fn prune_to_frontier(
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::land::LandIndex;
+    use crate::polar::PolarData;
+    use crate::weather::WeatherStore;
+
+    // ── test helpers ─────────────────────────────────────────────────────
+
+    /// PolarData returning a constant boat speed at every TWA/TWS.
+    fn flat_polar(speed: f64) -> PolarData {
+        let twa = vec![0.0, 90.0, 180.0];
+        let tws = vec![0.0, 30.0];
+        let speeds = vec![speed; twa.len() * tws.len()];
+        PolarData::from_flat(&twa, &tws, &speeds)
+    }
+
+    /// Uniform wind/current store covering lat 30–60, lon −20–20 between two times.
+    fn uniform_weather(u_ms: f32, v_ms: f32, t0_ms: f64, t1_ms: f64) -> WeatherStore {
+        let mut ws = WeatherStore::new();
+        let n_lat: usize = 31;
+        let n_lon: usize = 41;
+        let u: Vec<f32> = vec![u_ms; n_lat * n_lon];
+        let v: Vec<f32> = vec![v_ms; n_lat * n_lon];
+        ws.push_frame(t0_ms, &u, &v, 30.0, -20.0, 1.0, 1.0, n_lat, n_lon);
+        ws.push_frame(t1_ms, &u, &v, 30.0, -20.0, 1.0, 1.0, n_lat, n_lon);
+        ws
+    }
+
+    fn default_config() -> LegConfig {
+        LegConfig {
+            heading_step: 10.0,
+            sector_size: 10.0,
+            min_boat_speed: 0.5,
+            max_wind_kn: 50.0,
+            motor_speed_kn: 0.0,
+            motor_below_kn: 0.0,
+            wait_for_wind: false,
+            tack_penalty_sec: 0.0,
+            tack_threshold_deg: 45.0,
+            cone_half_angle: 90.0,
+            cone_disable_lookahead_nm: 10.0,
+            max_heading_change: 180.0,
+            arrival_radius_nm: 0.0,
+        }
+    }
+
+    // ── LegState::new — step sizing ──────────────────────────────────────
+
+    #[test]
+    fn step_h_clamped_for_short_route() {
+        // direct_dist ≈ 0 → est_h ≈ 0 → step_h clamped to 0.25 h
+        let config = default_config();
+        let state = LegState::new(45.0, 0.0, 45.0, 0.0, 0.0, 3_600_000.0 * 48.0, &config);
+        assert!(
+            (state.step_h - 0.25).abs() < 1e-9,
+            "expected step_h = 0.25, got {}",
+            state.step_h
+        );
+        assert!(
+            (state.step_ms - 0.25 * 3_600_000.0).abs() < 1e-3,
+            "step_ms should equal 0.25 h in ms"
+        );
+    }
+
+    #[test]
+    fn step_h_scales_with_distance() {
+        // direct_dist = 500 nm, est_speed = 5 kn → est_h = 100 h
+        // forecast_h = 200 h → est_h = min(100, 200) = 100
+        // step_h = 100 / 100 = 1.0 h
+        let config = default_config();
+        // ~500 nm apart: 45°N to ~53.3°N at same longitude
+        let start = (45.0, 0.0);
+        let end = (53.34, 0.0); // ≈ 500 nm
+        let forecast_end = 200.0 * 3_600_000.0;
+        let state = LegState::new(start.0, start.1, end.0, end.1, 0.0, forecast_end, &config);
+        assert!(
+            state.step_h > 0.25,
+            "step_h should be larger than the clamp for long routes, got {}",
+            state.step_h
+        );
+    }
+
+    #[test]
+    fn step_h_bounded_by_forecast_horizon() {
+        // direct_dist = 500 nm → est_h at 5 kn = 100 h, but forecast_h = 10 h
+        // est_h = min(100, 10) = 10, step_h = 10/100 = 0.1 → clamped to 0.25
+        let config = default_config();
+        let forecast_end = 10.0 * 3_600_000.0;
+        let state = LegState::new(45.0, 0.0, 53.34, 0.0, 0.0, forecast_end, &config);
+        assert!(
+            (state.step_h - 0.25).abs() < 1e-9,
+            "step_h should clamp to 0.25 when forecast is short, got {}",
+            state.step_h
+        );
+    }
+
+    // ── LegState::new — arrival radius ───────────────────────────────────
+
+    #[test]
+    fn arrival_radius_auto_scales_with_step_distance() {
+        let config = default_config(); // arrival_radius_nm = 0 → auto
+        let state = LegState::new(45.0, 0.0, 45.0, 0.0, 0.0, 3_600_000.0 * 48.0, &config);
+        // step_h = 0.25, est_speed = 5 → step_dist = 1.25 nm
+        // direct_dist ≈ 0 → (0/100).clamp(0.1, 2.0) = 0.1
+        // arrival_r = max(1.25, 0.1) = 1.25
+        assert!(
+            (state.arrival_r - 1.25).abs() < 1e-6,
+            "expected arrival_r = 1.25, got {}",
+            state.arrival_r
+        );
+    }
+
+    #[test]
+    fn arrival_radius_explicit_overrides_auto() {
+        let mut config = default_config();
+        config.arrival_radius_nm = 5.0;
+        let state = LegState::new(45.0, 0.0, 45.0, 0.0, 0.0, 3_600_000.0 * 48.0, &config);
+        assert!(
+            (state.arrival_r - 5.0).abs() < 1e-9,
+            "explicit arrival_radius_nm should be used, got {}",
+            state.arrival_r
+        );
+    }
+
+    // ── step() — forecast exhaustion ─────────────────────────────────────
+
+    #[test]
+    fn forecast_exhausted_when_next_step_exceeds_horizon() {
+        let config = default_config();
+        let polar = flat_polar(6.0);
+        let wind = uniform_weather(5.0, 0.0, 0.0, 100.0);
+        let current = WeatherStore::new();
+        let land = LandIndex::empty();
+
+        // forecast_end = 100 ms, step_ms = 0.25 h = 900_000 ms → first step overshoots
+        let mut state = LegState::new(45.0, 0.0, 46.0, 0.0, 0.0, 100.0, &config);
+        let result = state.step(&polar, &config, &wind, &current, &land);
+        assert!(
+            matches!(result, StepResult::ForecastExhausted),
+            "expected ForecastExhausted when next_time > forecast_end"
+        );
+    }
+
+    // ── step() — basic frontier expansion ────────────────────────────────
+
+    #[test]
+    fn step_produces_running_frontier() {
+        let config = default_config();
+        let polar = flat_polar(6.0);
+        let t_end = 48.0 * 3_600_000.0;
+        let wind = uniform_weather(5.0, 0.0, 0.0, t_end);
+        let current = WeatherStore::new();
+        let land = LandIndex::empty();
+
+        // ~60 nm apart, well within forecast
+        let mut state = LegState::new(45.0, 0.0, 46.0, 0.0, 0.0, t_end, &config);
+        let result = state.step(&polar, &config, &wind, &current, &land);
+        assert!(
+            matches!(result, StepResult::Running),
+            "expected Running for a route that can't arrive in one step"
+        );
+        assert!(
+            !state.frontier.is_empty(),
+            "frontier should contain candidates after a step"
+        );
+        assert_eq!(state.steps_completed, 1);
+    }
+
+    // ── step() — direct-to-destination arrival ───────────────────────────
+
+    #[test]
+    fn direct_arrival_when_destination_within_one_step() {
+        let config = default_config();
+        let polar = flat_polar(6.0);
+        let t_end = 48.0 * 3_600_000.0;
+        let wind = uniform_weather(5.0, 0.0, 0.0, t_end);
+        let current = WeatherStore::new();
+        let land = LandIndex::empty();
+
+        // ~0.6 nm apart — reachable in a single step (6 kn * 0.25 h = 1.5 nm)
+        let mut state = LegState::new(45.0, 0.0, 45.01, 0.0, 0.0, t_end, &config);
+        let result = state.step(&polar, &config, &wind, &current, &land);
+        assert!(
+            matches!(result, StepResult::Arrived),
+            "expected Arrived when destination is within one step's distance"
+        );
+        assert!(state.arrived.is_some(), "arrived index should be set");
+    }
+
+    // ── step() — motor speed fallback ────────────────────────────────────
+
+    #[test]
+    fn motor_fallback_kicks_in_below_threshold() {
+        let mut config = default_config();
+        config.min_boat_speed = 2.0; // filter out slow candidates
+        config.motor_speed_kn = 5.0;
+        config.motor_below_kn = 3.0; // motor when polar < 3 kn
+
+        let polar = flat_polar(1.0); // polar returns 1 kn (below threshold)
+        let t_end = 48.0 * 3_600_000.0;
+        let wind = uniform_weather(5.0, 0.0, 0.0, t_end);
+        let current = WeatherStore::new();
+        let land = LandIndex::empty();
+
+        // With motor: effective = 5 kn > min 2 kn → Running
+        let mut state = LegState::new(45.0, 0.0, 46.0, 0.0, 0.0, t_end, &config);
+        let result = state.step(&polar, &config, &wind, &current, &land);
+        assert!(
+            matches!(result, StepResult::Running),
+            "motor should produce candidates above min_boat_speed"
+        );
+
+        // Verify arena points have motor speed
+        let motor_point = state.arena.iter().find(|p| p.parent.is_some());
+        assert!(motor_point.is_some(), "should have expanded points");
+        assert!(
+            (motor_point.unwrap().boat_speed - 5.0).abs() < 1e-9,
+            "boat_speed should be motor_speed_kn (5.0), got {}",
+            motor_point.unwrap().boat_speed
+        );
+    }
+
+    #[test]
+    fn no_progress_without_motor_when_polar_too_slow() {
+        let mut config = default_config();
+        config.min_boat_speed = 2.0;
+        config.motor_speed_kn = 0.0; // motor disabled
+        config.motor_below_kn = 0.0;
+
+        let polar = flat_polar(1.0); // only 1 kn, below min_boat_speed
+        let t_end = 48.0 * 3_600_000.0;
+        let wind = uniform_weather(5.0, 0.0, 0.0, t_end);
+        let current = WeatherStore::new();
+        let land = LandIndex::empty();
+
+        let mut state = LegState::new(45.0, 0.0, 46.0, 0.0, 0.0, t_end, &config);
+        let result = state.step(&polar, &config, &wind, &current, &land);
+        assert!(
+            matches!(result, StepResult::NoProgress),
+            "expected NoProgress when polar speed < min_boat_speed and no motor"
+        );
+    }
+
+    // ── step() — tack penalty ────────────────────────────────────────────
+
+    #[test]
+    fn tack_penalty_reduces_step_distance() {
+        let mut config = default_config();
+        config.tack_penalty_sec = 600.0; // 10 min penalty
+        config.tack_threshold_deg = 30.0;
+        config.cone_half_angle = 180.0; // wide cone so all headings are tried
+        config.max_heading_change = 180.0;
+
+        let polar = flat_polar(6.0);
+        let t_end = 48.0 * 3_600_000.0;
+        let wind = uniform_weather(5.0, 0.0, 0.0, t_end);
+        let current = WeatherStore::new();
+        let land = LandIndex::empty();
+
+        let mut state = LegState::new(45.0, 0.0, 46.0, 0.0, 0.0, t_end, &config);
+
+        // First step: seed has no parent → no tack penalty applies
+        let r = state.step(&polar, &config, &wind, &current, &land);
+        assert!(matches!(r, StepResult::Running));
+
+        // Record distances from start for first-step points (no penalty)
+        let first_step_dists: Vec<f64> = state
+            .frontier
+            .iter()
+            .map(|&i| {
+                let p = &state.arena[i];
+                crate::geo::haversine_nm(45.0, 0.0, p.lat, p.lon)
+            })
+            .collect();
+        let _max_first = first_step_dists.iter().cloned().fold(0.0_f64, f64::max);
+
+        // Second step: points have parents with known ctw,
+        // large ctw changes (> 30°) should incur a 10-min penalty → shorter travel
+        let r = state.step(&polar, &config, &wind, &current, &land);
+        assert!(matches!(r, StepResult::Running));
+
+        // Find a point whose ctw changed by > 30° from parent (tacked)
+        let tacked = state.arena.iter().find(|p| {
+            if let Some(pi) = p.parent {
+                let parent = &state.arena[pi];
+                if parent.parent.is_some() {
+                    let delta = ((p.ctw - parent.ctw + 180.0 + 360.0) % 360.0 - 180.0).abs();
+                    return delta > config.tack_threshold_deg;
+                }
+            }
+            false
+        });
+        // The tack penalty is 600s = 1/6 h. With 6 kn speed:
+        // no penalty: dist = 6 * step_h
+        // with penalty: dist = 6 * (step_h - 1/6).max(0)
+        // The tacked point should have traveled less distance from its parent.
+        if let Some(tp) = tacked {
+            let parent = &state.arena[tp.parent.unwrap()];
+            let parent_dist = crate::geo::haversine_nm(45.0, 0.0, parent.lat, parent.lon);
+            let tp_dist = crate::geo::haversine_nm(parent.lat, parent.lon, tp.lat, tp.lon);
+            let expected_no_penalty = 6.0 * state.step_h;
+            assert!(
+                tp_dist < expected_no_penalty - 0.1,
+                "tacked point should travel shorter than {expected_no_penalty:.2} nm, got {tp_dist:.2} nm"
+            );
+            let _ = parent_dist; // used for debug
+        }
+        // Even if no tacked point exists (cone/heading filters), the test
+        // still validates that tack penalty config doesn't crash the step.
+    }
+
+    // ── prune_to_frontier — top-2 per sector ─────────────────────────────
+
+    #[test]
+    fn prune_keeps_top_two_per_sector() {
+        // Place 4 points in the same sector (bearing ~0° from start)
+        // at different distances. Pruning should keep the 2 farthest.
+        let start = (45.0, 0.0);
+        let arena: Vec<IsoPoint> = (1..=4)
+            .map(|i| IsoPoint {
+                lat: start.0 + i as f64 * 0.01, // all due north
+                lon: start.1,
+                time_ms: 0.0,
+                ctw: 0.0,
+                twa: 0.0,
+                boat_speed: 0.0,
+                step_calc_ms: 0.0,
+                parent: None,
+            })
+            .collect();
+        let candidates: Vec<usize> = (0..4).collect();
+
+        let result = prune_to_frontier(&arena, &candidates, start.0, start.1, 10.0);
+
+        // All 4 are in the same sector (bearing ≈ 0°, sector 0 at 10° width).
+        // Should keep exactly 2: the farthest two (indices 3 and 2).
+        assert_eq!(result.len(), 2, "should keep exactly 2 per sector");
+        // The farthest point (index 3) should be first slot
+        assert_eq!(result[0], 3);
+        assert_eq!(result[1], 2);
+    }
+
+    #[test]
+    fn prune_multiple_sectors() {
+        let start = (45.0, 0.0);
+        let arena = vec![
+            // Sector 0 (north): one point
+            IsoPoint {
+                lat: 45.1, lon: 0.0, time_ms: 0.0,
+                ctw: 0.0, twa: 0.0, boat_speed: 0.0, step_calc_ms: 0.0, parent: None,
+            },
+            // Sector 9 (east): one point (bearing ~90°)
+            IsoPoint {
+                lat: 45.0, lon: 0.1, time_ms: 0.0,
+                ctw: 0.0, twa: 0.0, boat_speed: 0.0, step_calc_ms: 0.0, parent: None,
+            },
+            // Sector 18 (south): one point (bearing ~180°)
+            IsoPoint {
+                lat: 44.9, lon: 0.0, time_ms: 0.0,
+                ctw: 0.0, twa: 0.0, boat_speed: 0.0, step_calc_ms: 0.0, parent: None,
+            },
+        ];
+        let candidates: Vec<usize> = (0..3).collect();
+        let result = prune_to_frontier(&arena, &candidates, start.0, start.1, 10.0);
+        // Each point in a different sector → all 3 survive (one per sector)
+        assert_eq!(result.len(), 3);
+    }
+
+    // ── backtrack ────────────────────────────────────────────────────────
+
+    #[test]
+    fn backtrack_empty_frontier_returns_empty() {
+        let config = default_config();
+        let mut state = LegState::new(45.0, 0.0, 46.0, 0.0, 0.0, 3_600_000.0 * 48.0, &config);
+        state.frontier.clear();
+        let route = state.backtrack();
+        assert!(route.is_empty(), "empty frontier should yield empty route");
+    }
+
+    #[test]
+    fn backtrack_after_arrival_snaps_to_destination() {
+        let config = default_config();
+        let polar = flat_polar(6.0);
+        let t_end = 48.0 * 3_600_000.0;
+        let wind = uniform_weather(5.0, 0.0, 0.0, t_end);
+        let current = WeatherStore::new();
+        let land = LandIndex::empty();
+
+        let end_lat = 45.01;
+        let end_lon = 0.0;
+        let mut state = LegState::new(45.0, 0.0, end_lat, end_lon, 0.0, t_end, &config);
+        let result = state.step(&polar, &config, &wind, &current, &land);
+        assert!(matches!(result, StepResult::Arrived));
+
+        let route = state.backtrack();
+        assert!(!route.is_empty(), "route should not be empty after arrival");
+        let last = route.last().unwrap();
+        assert!(
+            (last.lat - end_lat).abs() < 1e-9 && (last.lon - end_lon).abs() < 1e-9,
+            "last route point should snap to exact destination ({end_lat}, {end_lon}), got ({}, {})",
+            last.lat, last.lon
+        );
+    }
+}

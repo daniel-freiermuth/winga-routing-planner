@@ -89,6 +89,21 @@ impl WeatherStore {
         Self { frames: Vec::new() }
     }
 
+    /// Number of loaded forecast frames.
+    #[cfg(test)]
+    pub fn frame_count(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Time range covered by the loaded frames, or `None` if empty.
+    #[cfg(test)]
+    pub fn time_range(&self) -> Option<(f64, f64)> {
+        if self.frames.is_empty() {
+            return None;
+        }
+        Some((self.frames[0].time_ms, self.frames[self.frames.len() - 1].time_ms))
+    }
+
     /// Add a forecast frame. Frames must be pushed in chronological order.
     ///
     /// `u`, `v`: flat row-major f32 arrays `[lat_idx * n_lon + lon_idx]`, values in m/s.
