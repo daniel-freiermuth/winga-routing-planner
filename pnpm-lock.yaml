@@ -58,8 +58,8 @@ importers:
         specifier: ^1.8.0
         version: 1.8.0(svelte@5.56.7(@typescript-eslint/types@8.64.0))
       svelte-maplibre-gl:
-        specifier: ^2.1.0
-        version: 2.1.0(maplibre-gl@5.24.0)(svelte@5.56.7(@typescript-eslint/types@8.64.0))
+        specifier: ^2.2.1
+        version: 2.2.1(maplibre-gl@5.24.0)(svelte@5.56.7(@typescript-eslint/types@8.64.0))
       tsx:
         specifier: ^4.23.1
         version: 4.23.1
@@ -1280,10 +1280,10 @@ packages:
       svelte:
         optional: true
 
-  svelte-maplibre-gl@2.1.0:
-    resolution: {integrity: sha512-70y5Ufs5aSCoBVdSapmHpWFurE5NolXRlnqRtJG+gOSmVx9Y51zVzuKVG06ksPRoSq5v/Vsck8xl7nusjEcAWQ==}
+  svelte-maplibre-gl@2.2.1:
+    resolution: {integrity: sha512-HCJBs5WhKtQ4aba4AhU9sE/XE0X7NgVNRQG27qUEdsXeUGdE6ZPQoaQSyKE8WzbGR8+GGfyGFajz1+1le51TCQ==}
     peerDependencies:
-      maplibre-gl: '>=6.0.0-0 || ^5.19.0'
+      maplibre-gl: ^5.19.0 || ^6.0.0
       svelte: '>=5.0.0'
 
   svelte@5.56.7:
@@ -2466,7 +2466,7 @@ snapshots:
     optionalDependencies:
       svelte: 5.56.7(@typescript-eslint/types@8.64.0)
 
-  svelte-maplibre-gl@2.1.0(maplibre-gl@5.24.0)(svelte@5.56.7(@typescript-eslint/types@8.64.0)):
+  svelte-maplibre-gl@2.2.1(maplibre-gl@5.24.0)(svelte@5.56.7(@typescript-eslint/types@8.64.0)):
     dependencies:
       maplibre-gl: 5.24.0
       svelte: 5.56.7(@typescript-eslint/types@8.64.0)
