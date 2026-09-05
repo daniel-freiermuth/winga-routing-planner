@@ -101,7 +101,10 @@ impl WeatherStore {
         if self.frames.is_empty() {
             return None;
         }
-        Some((self.frames[0].time_ms, self.frames[self.frames.len() - 1].time_ms))
+        Some((
+            self.frames[0].time_ms,
+            self.frames[self.frames.len() - 1].time_ms,
+        ))
     }
 
     /// Add a forecast frame. Frames must be pushed in chronological order.

@@ -866,18 +866,36 @@ mod tests {
         let arena = vec![
             // Sector 0 (north): one point
             IsoPoint {
-                lat: 45.1, lon: 0.0, time_ms: 0.0,
-                ctw: 0.0, twa: 0.0, boat_speed: 0.0, step_calc_ms: 0.0, parent: None,
+                lat: 45.1,
+                lon: 0.0,
+                time_ms: 0.0,
+                ctw: 0.0,
+                twa: 0.0,
+                boat_speed: 0.0,
+                step_calc_ms: 0.0,
+                parent: None,
             },
             // Sector 9 (east): one point (bearing ~90°)
             IsoPoint {
-                lat: 45.0, lon: 0.1, time_ms: 0.0,
-                ctw: 0.0, twa: 0.0, boat_speed: 0.0, step_calc_ms: 0.0, parent: None,
+                lat: 45.0,
+                lon: 0.1,
+                time_ms: 0.0,
+                ctw: 0.0,
+                twa: 0.0,
+                boat_speed: 0.0,
+                step_calc_ms: 0.0,
+                parent: None,
             },
             // Sector 18 (south): one point (bearing ~180°)
             IsoPoint {
-                lat: 44.9, lon: 0.0, time_ms: 0.0,
-                ctw: 0.0, twa: 0.0, boat_speed: 0.0, step_calc_ms: 0.0, parent: None,
+                lat: 44.9,
+                lon: 0.0,
+                time_ms: 0.0,
+                ctw: 0.0,
+                twa: 0.0,
+                boat_speed: 0.0,
+                step_calc_ms: 0.0,
+                parent: None,
             },
         ];
         let candidates: Vec<usize> = (0..3).collect();
@@ -918,7 +936,8 @@ mod tests {
         assert!(
             (last.lat - end_lat).abs() < 1e-9 && (last.lon - end_lon).abs() < 1e-9,
             "last route point should snap to exact destination ({end_lat}, {end_lon}), got ({}, {})",
-            last.lat, last.lon
+            last.lat,
+            last.lon
         );
     }
 }
