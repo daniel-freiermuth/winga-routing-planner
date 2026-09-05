@@ -384,7 +384,7 @@ impl LandIndex {
 
 #[cfg(test)]
 impl LandIndex {
-    fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             polygons: Vec::new(),
             edge_grid: HashMap::new(),
