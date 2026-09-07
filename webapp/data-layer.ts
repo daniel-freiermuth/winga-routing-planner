@@ -62,9 +62,35 @@ async function getManifest(modelId: string) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-type ForecastStep = { iso: string; compact: string };
+interface ForecastStep {
+  iso: string;
+  compact: string;
+}
 
-let windModel = 'ecmwf-hres';
+interface GridPoint {
+  lat: number;
+  lon: number;
+  u: number;
+  v: number;
+  speed: number;
+  height?: number;
+}
+
+interface WaveGridResult {
+  points: { lat: number; lon: number; waveHeight: number }[];
+  timeMs: number;
+}
+
+interface GeoJSONCollection {
+  type: string;
+  features: {
+    type: string;
+    geometry: { type: string; coordinates: unknown };
+    properties: null;
+  }[];
+}
+
+const windModel = 'ecmwf-hres';
 let windSteps: ForecastStep[] = [];
 let waveSteps: ForecastStep[] = [];
 let cmemsSteps: ForecastStep[] = [];
@@ -76,7 +102,7 @@ let cmemsModelRun = '';
  * Load forecast time axes from Windy minifests.
  * @returns {Promise<{windTimes: string[], currentTimes: string[]}>}
  */
-export async function loadTimesFromWindy() {
+export async function loadTimesFromWindy(): Promise<{ windTimes: string[]; currentTimes: string[] }> {
   const [windMf, waveMf, cmemsMf] = await Promise.all([
     getManifest(windModel),
     getManifest('ecmwf-wam'),
@@ -143,13 +169,13 @@ async function sampleOverlayGrid(
   const br = latLonToTile(bbox.latMin, bbox.lonMax, ZOOM);
 
   // Pre-fetch all needed tiles in parallel
-  const tilePromises = new Map();
+  const tilePromises = new Map<string, Promise<{ rgba: Uint8Array; header: WindyTileHeader } | null>>();
   for (let tx = tl.x; tx <= br.x; tx++) {
     for (let ty = tl.y; ty <= br.y; ty++) {
       const url = buildTileUrl(model, modelRun, validTime, ZOOM, tx, ty, overlay, 'surface', isPng ? 'png' : 'jpg');
-      if (!tilePromises.has(`${tx}/${ty}`)) {
+      if (!tilePromises.has(`${String(tx)}/${String(ty)}`)) {
         tilePromises.set(
-          `${tx}/${ty}`,
+          `${String(tx)}/${String(ty)}`,
           fetchTile(url).catch(() => null),
         );
       }
@@ -157,20 +183,20 @@ async function sampleOverlayGrid(
   }
 
   // Resolve all tiles
-  const tiles = new Map();
+  const tiles = new Map<string, { rgba: Uint8Array; header: WindyTileHeader }>();
   for (const [key, promise] of tilePromises) {
     const tile = await promise;
     if (tile) tiles.set(key, tile);
   }
 
-  if (signal?.aborted) return [];
+  if (signal?.aborted === true) return [];
 
   // Sample the grid
   const points = [];
   for (let lat = bbox.latMin; lat <= bbox.latMax; lat += step) {
     for (let lon = bbox.lonMin; lon <= bbox.lonMax; lon += step) {
       const { x, y } = latLonToTile(lat, lon, ZOOM);
-      const tile = tiles.get(`${x}/${y}`);
+      const tile = tiles.get(`${String(x)}/${String(y)}`);
       if (!tile) continue;
       const { px, py } = latLonToPixel(lat, lon, ZOOM, x, y);
       const val = sampleTilePixel(tile.rgba, tile.header, px, py, isOcean, isPng);
@@ -198,7 +224,7 @@ async function sampleOverlayGrid(
  * @param {AbortSignal} [signal]
  * @returns {Promise<{lat:number,lon:number,u:number,v:number}[]>}
  */
-export async function fetchWindGrid(timeIdx: number, bbox: BoundingBox, signal?: AbortSignal) {
+export async function fetchWindGrid(timeIdx: number, bbox: BoundingBox, signal?: AbortSignal): Promise<GridPoint[]> {
   const step = windSteps[timeIdx];
   if (!step) return [];
   return sampleOverlayGrid(windModel, windModelRun, step.compact, 'wind', false, bbox, 0.5, signal);
@@ -208,31 +234,43 @@ export async function fetchWindGrid(timeIdx: number, bbox: BoundingBox, signal?:
  * Fetch wind grid interpolated at an arbitrary time (ms).
  * Finds the two bracketing native forecast steps and linearly interpolates u/v.
  */
-export async function fetchWindGridAtTime(timeMs: number, bbox: BoundingBox, signal?: AbortSignal) {
+export async function fetchWindGridAtTime(
+  timeMs: number,
+  bbox: BoundingBox,
+  signal?: AbortSignal,
+): Promise<GridPoint[]> {
   if (windSteps.length === 0) return [];
   // Find bracketing steps
   let lo = 0;
   for (let i = 1; i < windSteps.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     if (new Date(windSteps[i]!.iso).getTime() <= timeMs) lo = i;
     else break;
   }
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const t0ms = new Date(windSteps[lo]!.iso).getTime();
   // Exact match or at/past last step → no interpolation needed
   if (lo >= windSteps.length - 1 || t0ms === timeMs) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     return sampleOverlayGrid(windModel, windModelRun, windSteps[lo]!.compact, 'wind', false, bbox, 0.5, signal);
   }
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const t1ms = new Date(windSteps[lo + 1]!.iso).getTime();
   const f = (timeMs - t0ms) / (t1ms - t0ms);
   if (f < 0.01)
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     return sampleOverlayGrid(windModel, windModelRun, windSteps[lo]!.compact, 'wind', false, bbox, 0.5, signal);
   if (f > 0.99)
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     return sampleOverlayGrid(windModel, windModelRun, windSteps[lo + 1]!.compact, 'wind', false, bbox, 0.5, signal);
   // Fetch both grids and interpolate
   const [g0, g1] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     sampleOverlayGrid(windModel, windModelRun, windSteps[lo]!.compact, 'wind', false, bbox, 0.5, signal),
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     sampleOverlayGrid(windModel, windModelRun, windSteps[lo + 1]!.compact, 'wind', false, bbox, 0.5, signal),
   ]);
-  if (signal?.aborted) return [];
+  if (signal?.aborted === true) return [];
   // Build lookup for g1 by position
   const g1Map = new Map<string, { u: number; v: number }>();
   for (const p of g1) g1Map.set(`${String(p.lat)},${String(p.lon)}`, p);
@@ -258,7 +296,7 @@ export async function fetchWindGridAtTime(timeMs: number, bbox: BoundingBox, sig
  * @param {AbortSignal} [signal]
  * @returns {Promise<{points: {lat:number,lon:number,waveHeight:number}[], timeMs: number}>}
  */
-export async function fetchWaveGrid(timeIdx: number, bbox: BoundingBox, signal?: AbortSignal) {
+export async function fetchWaveGrid(timeIdx: number, bbox: BoundingBox, signal?: AbortSignal): Promise<WaveGridResult> {
   const windStep = windSteps[timeIdx];
   if (!windStep) return { points: [], timeMs: 0 };
   const windTimeMs = new Date(windStep.iso).getTime();
@@ -285,13 +323,19 @@ export async function fetchWaveGrid(timeIdx: number, bbox: BoundingBox, signal?:
 /**
  * Fetch wave grid interpolated at an arbitrary time (ms).
  */
-export async function fetchWaveGridAtTime(timeMs: number, bbox: BoundingBox, signal?: AbortSignal) {
+export async function fetchWaveGridAtTime(
+  timeMs: number,
+  bbox: BoundingBox,
+  signal?: AbortSignal,
+): Promise<WaveGridResult> {
   if (waveSteps.length === 0) return { points: [] as { lat: number; lon: number; waveHeight: number }[], timeMs };
   let lo = 0;
   for (let i = 1; i < waveSteps.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     if (new Date(waveSteps[i]!.iso).getTime() <= timeMs) lo = i;
     else break;
   }
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const t0ms = new Date(waveSteps[lo]!.iso).getTime();
 
   const sampleWave = async (step: { compact: string }) => {
@@ -310,15 +354,18 @@ export async function fetchWaveGridAtTime(timeMs: number, bbox: BoundingBox, sig
   };
 
   if (lo >= waveSteps.length - 1 || t0ms === timeMs) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const raw = await sampleWave(waveSteps[lo]!);
     return {
       points: raw.map((p) => ({ lat: p.lat, lon: p.lon, waveHeight: Math.round(p.height * 1000) / 1000 })),
       timeMs,
     };
   }
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const t1ms = new Date(waveSteps[lo + 1]!.iso).getTime();
   const f = (timeMs - t0ms) / (t1ms - t0ms);
   if (f < 0.01) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const raw = await sampleWave(waveSteps[lo]!);
     return {
       points: raw.map((p) => ({ lat: p.lat, lon: p.lon, waveHeight: Math.round(p.height * 1000) / 1000 })),
@@ -326,14 +373,16 @@ export async function fetchWaveGridAtTime(timeMs: number, bbox: BoundingBox, sig
     };
   }
   if (f > 0.99) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const raw = await sampleWave(waveSteps[lo + 1]!);
     return {
       points: raw.map((p) => ({ lat: p.lat, lon: p.lon, waveHeight: Math.round(p.height * 1000) / 1000 })),
       timeMs,
     };
   }
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const [g0, g1] = await Promise.all([sampleWave(waveSteps[lo]!), sampleWave(waveSteps[lo + 1]!)]);
-  if (signal?.aborted) return { points: [], timeMs };
+  if (signal?.aborted === true) return { points: [], timeMs };
   const g1Map = new Map<string, number>();
   for (const p of g1) g1Map.set(`${String(p.lat)},${String(p.lon)}`, p.height);
   const points = g0.map((p) => {
@@ -351,7 +400,7 @@ export async function fetchWaveGridAtTime(timeMs: number, bbox: BoundingBox, sig
  * @param {AbortSignal} [signal]
  * @returns {Promise<{lat:number,lon:number,u:number,v:number}[]>}
  */
-export async function fetchCurrentGrid(timeMs: number, bbox: BoundingBox, signal?: AbortSignal) {
+export async function fetchCurrentGrid(timeMs: number, bbox: BoundingBox, signal?: AbortSignal): Promise<GridPoint[]> {
   const step = closestStep(cmemsSteps, timeMs);
   if (!step) return [];
   const raw = await sampleOverlayGrid('cmems', cmemsModelRun, step.compact, 'seacurrents', true, bbox, 0.5, signal);
@@ -417,6 +466,7 @@ export async function queryPointWeather(lat: number, lon: number, timeMs: number
   }
 
   // Current from CMEMS tile (72h horizon)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const cmemsEnd = cmemsSteps.length > 0 ? new Date(cmemsSteps[cmemsSteps.length - 1]!.iso).getTime() : 0;
   if (timeMs <= cmemsEnd) {
     const curStep = closestStep(cmemsSteps, timeMs);
@@ -437,7 +487,7 @@ export async function queryPointWeather(lat: number, lon: number, timeMs: number
 
 // ── Land overlay ──────────────────────────────────────────────────────────────
 
-import { fetchLandIndex, parseIndexFromArrayBuffer } from '../src/lib/land-index-loader';
+import { fetchLandIndex } from '../src/lib/land-index-loader';
 import { polygonsInBbox, buildLandIndex } from '../src/lib/landmask';
 
 let landIndex: LandIndex | null = null; // LandIndex for the standard (h-tier) coastline
@@ -450,12 +500,12 @@ let dilatedLandIndex: LandIndex | null = null; // LandIndex for the dilated (saf
  * @param {string} url           URL to edge-index.bin.gz
  * @param {string} [dilatedUrl]  URL to dilated-edge-index.bin.gz (optional)
  */
-export async function loadLandData(url: string, dilatedUrl?: string) {
+export async function loadLandData(url: string, dilatedUrl?: string): Promise<void> {
   if (!landIndex) {
     const edgeIndex = await fetchLandIndex(url);
     landIndex = buildLandIndex(edgeIndex.polygons);
   }
-  if (dilatedUrl && !dilatedLandIndex) {
+  if (dilatedUrl !== undefined && dilatedUrl !== '' && !dilatedLandIndex) {
     try {
       const dilatedEdge = await fetchLandIndex(dilatedUrl);
       dilatedLandIndex = buildLandIndex(dilatedEdge.polygons);
@@ -466,12 +516,12 @@ export async function loadLandData(url: string, dilatedUrl?: string) {
 }
 
 /** Whether land data has been loaded. */
-export function landDataReady() {
+export function landDataReady(): boolean {
   return landIndex !== null;
 }
 
 /** Whether dilated land data has been loaded. */
-export function dilatedLandDataReady() {
+export function dilatedLandDataReady(): boolean {
   return dilatedLandIndex !== null;
 }
 
@@ -483,7 +533,7 @@ export function dilatedLandDataReady() {
  * @param {boolean} [dilated=false]
  * @returns {{type:string, features:object[]}}
  */
-export function getLandPolygonsGeoJSON(bbox: BoundingBox, dilated = false) {
+export function getLandPolygonsGeoJSON(bbox: BoundingBox, dilated = false): GeoJSONCollection {
   const idx = dilated ? dilatedLandIndex : landIndex;
   if (!idx) return { type: 'FeatureCollection', features: [] };
 

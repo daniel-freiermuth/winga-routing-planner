@@ -6,6 +6,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
+// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
 const pkg = JSON.parse(readFileSync(resolve(__dir, '../package.json'), 'utf-8')) as { version: string };
 const commitHash = (() => {
   try {

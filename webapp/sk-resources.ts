@@ -1,6 +1,6 @@
 // SignalK resource loading: departure points, waypoint routes, vessel position.
 
-import maplibregl from 'maplibre-gl';
+import type maplibregl from 'maplibre-gl';
 import { skState } from './sk-state.svelte';
 
 /** External dependencies injected from app.ts. */
@@ -12,6 +12,10 @@ export interface SkDeps {
   endMarker: maplibregl.Marker;
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 // ── Departure resources ──────────────────────────────────────────────────────
 
 export async function loadDepartureResources(deps: SkDeps): Promise<void> {
@@ -20,14 +24,20 @@ export async function loadDepartureResources(deps: SkDeps): Promise<void> {
     const r = await deps.skFetch('/signalk/v2/api/resources/waypoints');
     if (r.ok) {
       const data: unknown = await r.json();
-      for (const [, wp] of Object.entries(data as Record<string, Record<string, unknown>>)) {
-        const feature = wp['feature'] as Record<string, unknown> | undefined;
-        const geometry = feature?.['geometry'] as Record<string, unknown> | undefined;
-        const coords = geometry?.['coordinates'] as number[] | undefined;
+      if (!isRecord(data)) return;
+      for (const [, wp] of Object.entries(data)) {
+        if (!isRecord(wp)) continue;
+        const feature = wp['feature'];
+        if (!isRecord(feature)) continue;
+        const geometry = feature['geometry'];
+        if (!isRecord(geometry)) continue;
+        const coords = geometry['coordinates'];
         if (!Array.isArray(coords) || coords.length < 2) continue;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- narrowed by typeof checks below
         const [lon, lat] = coords;
         if (typeof lat !== 'number' || typeof lon !== 'number') continue;
-        entries.push({ label: (wp['name'] as string | undefined) ?? 'Unnamed waypoint', lat, lon });
+        const nameVal = wp['name'];
+        entries.push({ label: typeof nameVal === 'string' ? nameVal : 'Unnamed waypoint', lat, lon });
       }
     }
   } catch {
@@ -41,13 +51,19 @@ export async function loadWaypointRoutes(deps: SkDeps): Promise<void> {
     const r = await deps.skFetch('/signalk/v2/api/resources/routes');
     if (!r.ok) return;
     const data: unknown = await r.json();
+    if (!isRecord(data)) return;
     const routes: { label: string; coords: number[][] }[] = [];
-    for (const [, v] of Object.entries(data as Record<string, Record<string, unknown>>)) {
-      const feature = v['feature'] as Record<string, unknown> | undefined;
-      const geometry = feature?.['geometry'] as Record<string, unknown> | undefined;
-      const coords = geometry?.['coordinates'] as number[][] | undefined;
+    for (const [, v] of Object.entries(data)) {
+      if (!isRecord(v)) continue;
+      const feature = v['feature'];
+      if (!isRecord(feature)) continue;
+      const geometry = feature['geometry'];
+      if (!isRecord(geometry)) continue;
+      const coords = geometry['coordinates'];
       if (!Array.isArray(coords) || coords.length < 2) continue;
-      routes.push({ label: (v['name'] as string | undefined) ?? 'Unnamed', coords });
+      const nameVal = v['name'];
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- coords validated by Array.isArray + length check
+      routes.push({ label: typeof nameVal === 'string' ? nameVal : 'Unnamed', coords });
     }
     skState.waypointRoutes = routes;
   } catch {
@@ -70,13 +86,25 @@ export function connectVesselPositionStream(deps: SkDeps): void {
   };
   ws.onmessage = (e) => {
     try {
-      const delta = JSON.parse(e.data as string) as {
-        updates?: { values?: { path: string; value?: { latitude: number; longitude: number } }[] }[];
-      };
-      for (const update of delta.updates ?? []) {
-        for (const v of update.values ?? []) {
-          if (v.path === 'navigation.position' && v.value) {
-            skState.vesselPosition = { lat: v.value.latitude, lon: v.value.longitude };
+      const rawData: unknown = e.data;
+      if (typeof rawData !== 'string') return;
+      const delta: unknown = JSON.parse(rawData);
+      if (!isRecord(delta)) return;
+      const updates = delta['updates'];
+      if (!Array.isArray(updates)) return;
+      for (const update of updates) {
+        if (!isRecord(update)) continue;
+        const values = update['values'];
+        if (!Array.isArray(values)) continue;
+        for (const v of values) {
+          if (!isRecord(v)) continue;
+          if (v['path'] === 'navigation.position' && isRecord(v['value'])) {
+            const val = v['value'];
+            const latitude = val['latitude'];
+            const longitude = val['longitude'];
+            if (typeof latitude === 'number' && typeof longitude === 'number') {
+              skState.vesselPosition = { lat: latitude, lon: longitude };
+            }
           }
         }
       }
@@ -87,6 +115,8 @@ export function connectVesselPositionStream(deps: SkDeps): void {
   ws.onclose = () => {
     skState.vesselPosition = null;
     skState.vesselPositionWs = null;
-    setTimeout(() => connectVesselPositionStream(deps), 5000);
+    setTimeout(() => {
+      connectVesselPositionStream(deps);
+    }, 5000);
   };
 }

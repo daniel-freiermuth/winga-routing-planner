@@ -22,12 +22,11 @@ function geodesicBearing(lat1: number, lon1: number, lat2: number, lon2: number)
  * Sort frontier points by bearing from origin (for isochrone rendering).
  */
 export function sortByBearing(pts: number[][], origin: { lat: number; lon: number }): number[][] {
-  return pts
-    .slice()
-    .sort(
-      (a, b) =>
-        geodesicBearing(origin.lat, origin.lon, a[0]!, a[1]!) - geodesicBearing(origin.lat, origin.lon, b[0]!, b[1]!),
-    );
+  return pts.slice().sort(
+    (a, b) =>
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- GeoJSON coordinate positions guaranteed to exist
+      geodesicBearing(origin.lat, origin.lon, a[0]!, a[1]!) - geodesicBearing(origin.lat, origin.lon, b[0]!, b[1]!),
+  );
 }
 
 /**
@@ -40,21 +39,28 @@ export function splitByAngularGap(
   thresholdDeg: number,
 ): number[][][] {
   if (pts.length < 2) return [pts];
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- GeoJSON coordinate positions guaranteed to exist
   const bearing = (p: number[]) => geodesicBearing(origin.lat, origin.lon, p[0]!, p[1]!);
   const bearings = pts.map(bearing);
   const angularGap = (a: number, b: number) => ((b - a + 540) % 360) - 180;
   const segments: number[][][] = [];
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- pts.length >= 2 checked above
   let current: number[][] = [pts[0]!];
   for (let i = 1; i < pts.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i and i-1 are valid indices within loop bounds
     if (angularGap(bearings[i - 1]!, bearings[i]!) > thresholdDeg) {
       segments.push(current);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i < pts.length in loop bound
       current = [pts[i]!];
     } else {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i < pts.length in loop bound
       current.push(pts[i]!);
     }
   }
   segments.push(current);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- bearings has pts.length >= 2 entries
   if (segments.length > 1 && angularGap(bearings[bearings.length - 1]!, bearings[0]! + 360) <= thresholdDeg) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- segments always has at least one entry
     segments[0] = [...segments[segments.length - 1]!, ...segments[0]!];
     segments.pop();
   }

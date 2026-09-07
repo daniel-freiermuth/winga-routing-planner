@@ -30,7 +30,7 @@ export interface ScrubberState {
 /** Compute the time label text for a given scrubber index. */
 export function computeLabel(idx: number, windTimes: string[]): string {
   const t = windTimes[idx];
-  if (!t) return '';
+  if (t === undefined || t === '') return '';
   return new Date(t).toLocaleString([], {
     month: 'short',
     day: 'numeric',
@@ -55,23 +55,28 @@ export function computeCoverageHtml(rangeStart: number, rangeEnd: number, state:
     );
   };
 
-  if (state.scrubberLockedToRoute && state.graphMeta && state.graphMeta.some((m) => m.gribFile != null)) {
+  if (state.scrubberLockedToRoute && state.graphMeta?.some((m) => m.gribFile != null) === true) {
     const stops: string[] = [];
     for (let i = 0; i < state.graphMeta.length; i++) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const tMs = new Date(state.graphMeta[i]!.time).getTime();
       let si = state.windTimes.findIndex((t) => new Date(t).getTime() >= tMs);
       if (si < 0) si = rangeEnd;
+      const windTimeAtEnd = state.windTimes[rangeEnd];
       const nextMs =
         i < state.graphMeta.length - 1
-          ? new Date(state.graphMeta[i + 1]!.time).getTime()
-          : state.windTimes[rangeEnd]
-            ? new Date(state.windTimes[rangeEnd]!).getTime()
+          ? // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            new Date(state.graphMeta[i + 1]!.time).getTime()
+          : windTimeAtEnd !== undefined
+            ? new Date(windTimeAtEnd).getTime()
             : tMs;
       let ei = state.windTimes.findIndex((t) => new Date(t).getTime() >= nextMs);
       if (ei < 0) ei = rangeEnd;
       ei = Math.max(si, ei - 1);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const fp = state.graphMeta[i]!.gribFile;
       const colorIdx = fp != null ? state.gribInfoFiles.findIndex((f) => f.path === fp) : -1;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const color = colorIdx >= 0 ? C64_PALETTE[colorIdx % C64_PALETTE.length]! : '#45475a';
       const a = (((Math.max(rangeStart, Math.min(rangeEnd, si)) - rangeStart) / span) * 100).toFixed(2);
       const b = (((Math.max(rangeStart, Math.min(rangeEnd, ei)) - rangeStart) / span) * 100).toFixed(2);
@@ -89,6 +94,7 @@ export function computeCoverageHtml(rangeStart: number, rangeEnd: number, state:
       const endMs = new Date(f.timeEnd).getTime();
       const si = state.windTimes.findIndex((t) => new Date(t).getTime() >= startMs);
       const ei = state.windTimes.findLastIndex((t) => new Date(t).getTime() <= endMs);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       addRow(C64_PALETTE[i % C64_PALETTE.length]!, si, ei);
     });
   }

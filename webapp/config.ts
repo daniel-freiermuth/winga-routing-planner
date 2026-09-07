@@ -19,18 +19,21 @@ export async function loadConfig(
   try {
     const cfgRes = await fetch('./config.json');
     if (!cfgRes.ok) return;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- JSON parsed value
     const cfg = (await cfgRes.json()) as Record<string, unknown>;
-    if ((cfg['waveOverlayMaxM'] as number | undefined) != null) {
-      configState.waveOverlayMaxM = cfg['waveOverlayMaxM'] as number;
+    const waveVal = cfg['waveOverlayMaxM'];
+    if (typeof waveVal === 'number') {
+      configState.waveOverlayMaxM = waveVal;
       waveOverlayMaxMStore.set(configState.waveOverlayMaxM);
     }
-    configState.windSpeedMs = !!(cfg['windSpeedMs'] as boolean | undefined);
+    configState.windSpeedMs = cfg['windSpeedMs'] === true;
     windSpeedMsStore.set(configState.windSpeedMs);
-    if ((cfg['conditionsGraphHeight'] as number | undefined) != null) {
-      configState.conditionsGraphHeight = cfg['conditionsGraphHeight'] as number;
+    const graphHeight = cfg['conditionsGraphHeight'];
+    if (typeof graphHeight === 'number') {
+      configState.conditionsGraphHeight = graphHeight;
     }
-    if ((cfg['forecastSkillHorizonHours'] as number | undefined) != null)
-      configState.forecastSkillHorizonHours = cfg['forecastSkillHorizonHours'] as number;
+    const horizonHours = cfg['forecastSkillHorizonHours'];
+    if (typeof horizonHours === 'number') configState.forecastSkillHorizonHours = horizonHours;
   } catch {
     /* no config file */
   }
@@ -38,7 +41,9 @@ export async function loadConfig(
   try {
     const up = await skFetch('/signalk/v1/unitpreferences/active');
     if (up.ok) {
-      configState.unitPrefs = ((await up.json()) as { categories: Record<string, UnitPref> }).categories;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- JSON parsed value
+      const upData = (await up.json()) as { categories: Record<string, UnitPref> };
+      configState.unitPrefs = upData.categories;
       unitPrefsStore.set(configState.unitPrefs);
     }
   } catch {
@@ -53,6 +58,7 @@ export async function loadConfig(
   try {
     const bi = await fetch('./buildinfo.json');
     if (bi.ok) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- JSON parsed value
       const { version } = (await bi.json()) as { version: string };
       callbacks.setBuildVersion(`v${version}`);
     }

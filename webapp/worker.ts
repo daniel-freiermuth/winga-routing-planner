@@ -27,7 +27,10 @@ interface CalculatePayload {
   useSafetyMargin?: boolean;
 }
 
-type InMessage = { type: 'calculate'; payload: CalculatePayload };
+interface InMessage {
+  type: 'calculate';
+  payload: CalculatePayload;
+}
 
 type OutMessage =
   | {
@@ -59,16 +62,18 @@ _self['js_on_progress'] = (pct: number, frontier: Float64Array): void => {
   lastFrontierLons = [];
   const pairs: [number, number][] = [];
   for (let i = 0; i < frontier.length; i += 2) {
+    /* eslint-disable @typescript-eslint/no-non-null-assertion -- hot loop, i bounded by frontier.length */
     lastFrontierLats.push(frontier[i]!);
     lastFrontierLons.push(frontier[i + 1]!);
     pairs.push([frontier[i]!, frontier[i + 1]!]);
+    /* eslint-enable @typescript-eslint/no-non-null-assertion */
   }
   post({ type: 'progress', pct, frontier: pairs });
 };
 
 // ── WASM loading ──────────────────────────────────────────────────────────────
 
-type WasmModule = {
+interface WasmModule {
   RouterSession: new (
     polar_twa: Float64Array,
     polar_tws: Float64Array,
@@ -79,7 +84,7 @@ type WasmModule = {
     options: Float64Array,
     land_index: Uint8Array,
   ) => WasmRouterSession;
-};
+}
 
 interface WasmRouterSession {
   push_wind_frame(
@@ -118,12 +123,13 @@ let wasmModule: WasmModule | null = null;
 
 async function loadWasm(): Promise<WasmModule> {
   if (wasmModule) return wasmModule;
-  // Dynamic import: WASM module is a build artifact loaded asynchronously (not known at author time).
+  // Dynamic import: WASM build artifact, not known at author time; types available after build:wasm
   const mod = await import('./wasm-pkg/wasm_router.js');
   await mod.default();
-  wasmModule = mod as unknown as WasmModule;
+  const loaded = mod as WasmModule;
+  wasmModule = loaded;
   console.log('[routing] WASM module loaded');
-  return wasmModule;
+  return loaded;
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -137,7 +143,7 @@ async function fetchGzBinary(url: string): Promise<ArrayBuffer> {
   if (!isGzipped) return buf;
   const ds = new DecompressionStream('gzip');
   const writer = ds.writable.getWriter();
-  void writer.write(bytes).then(() => writer.close());
+  void writer.write(bytes).then(async () => writer.close());
   const reader = ds.readable.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -299,8 +305,10 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
   const allPoints = [request.start, ...waypoints, request.end];
   const legs = new Float64Array(allPoints.length * 2);
   for (let i = 0; i < allPoints.length; i++) {
+    /* eslint-disable @typescript-eslint/no-non-null-assertion -- i bounded by allPoints.length */
     legs[i * 2] = allPoints[i]!.lat;
     legs[i * 2 + 1] = allPoints[i]!.lon;
+    /* eslint-enable @typescript-eslint/no-non-null-assertion */
   }
 
   const opts = request.options ?? {};
@@ -312,6 +320,7 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
     Number(opts['maxWaveM'] ?? 0),
     Number(opts['motorSpeedKn'] ?? 0),
     Number(opts['motorBelowKn'] ?? 0),
+    // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions -- options value is loosely typed
     opts['waitForWind'] ? 1 : 0,
     Number(opts['tackPenaltySec'] ?? 30),
     Number(opts['tackThresholdDeg'] ?? 60),
@@ -343,8 +352,10 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
       const bracket = session.needs();
       if (bracket.length === 0) break; // done or error
 
+      /* eslint-disable @typescript-eslint/no-non-null-assertion -- bracket has ≥1 element (checked on line 344) */
       const timeLo = bracket[0]!;
       const timeHi = bracket[1]!;
+      /* eslint-enable @typescript-eslint/no-non-null-assertion */
 
       // Report weather-loading status — reuse last WASM pct to avoid bar flicker
       post({
@@ -358,7 +369,7 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
       const lookaheadMs = timeHi + LOOKAHEAD_FRAMES * (timeHi - timeLo);
       await ensureWindFrames(windProvider, windTimesMs, session, gridSpec, timeLo, lookaheadMs);
       if (hasCurrent) {
-        await ensureCurrentFrames(currentProvider, currentTimesMs, session, gridSpec, timeLo, lookaheadMs);
+        ensureCurrentFrames(currentProvider, currentTimesMs, session, gridSpec, timeLo, lookaheadMs);
       }
 
       // Run one step
@@ -370,7 +381,7 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
       } else if (stepStatus === 2) {
         // No progress
         const err = session.error();
-        if (err) {
+        if (err !== undefined && err !== '') {
           post({ type: 'error', message: err });
           return;
         }
@@ -388,8 +399,10 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
       if (lastFrontierLats.length > 0) {
         let needExpand = false;
         for (let fi = 0; fi < lastFrontierLats.length; fi++) {
+          /* eslint-disable @typescript-eslint/no-non-null-assertion -- fi bounded by lastFrontierLats.length */
           const fLat = lastFrontierLats[fi]!;
           const fLon = lastFrontierLons[fi]!;
+          /* eslint-enable @typescript-eslint/no-non-null-assertion */
           if (
             fLat < gridSpec.latMin + EDGE_MARGIN ||
             fLat > gridSpec.latMin + (gridSpec.nLat - 1) * gridSpec.latStep - EDGE_MARGIN ||
@@ -425,17 +438,20 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
 
     // 5. Extract and enrich route
     const flat = session.route();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- route header element
     const nRoutePoints = flat[0]!;
     const route: RoutePoint[] = [];
     for (let i = 0; i < nRoutePoints; i++) {
       const base = 1 + i * 7;
+      /* eslint-disable @typescript-eslint/no-non-null-assertion -- structured WASM route array, indices valid by layout */
       const lat = flat[base]!;
       const lon = flat[base + 1]!;
       const timeMs = flat[base + 2]!;
+      /* eslint-enable @typescript-eslint/no-non-null-assertion */
       const time = new Date(timeMs);
 
       // Resample weather at each waypoint for display-only fields
-      const gustMs = windProvider.getGustAtTime ? windProvider.getGustAtTime(lat, lon, timeMs) : undefined;
+      const gustMs = windProvider.getGustAtTime(lat, lon, timeMs);
       const cur = hasCurrent ? currentProvider.getCurrent(lat, lon, time) : undefined;
       const resampled = windProvider.getWindAtTime(lat, lon, timeMs);
 
@@ -446,15 +462,19 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
         lat,
         lon,
         time,
+        /* eslint-disable @typescript-eslint/no-non-null-assertion -- structured WASM route array */
         ctw: flat[base + 3]!,
         twa: flat[base + 4]!,
+        /* eslint-enable @typescript-eslint/no-non-null-assertion */
         tws: windSpeedKnots(resampled.u, resampled.v),
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         boatSpeed: flat[base + 5]! > 0 ? flat[base + 5]! : undefined,
         windDir: windDirection(resampled.u, resampled.v),
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         legCalcMs: flat[base + 6]!,
-        waveHeight: windProvider.getWaveAtTime ? windProvider.getWaveAtTime(lat, lon, timeMs) : undefined,
-        wavePeriod: windProvider.getWavePeriodAtTime ? windProvider.getWavePeriodAtTime(lat, lon, timeMs) : undefined,
-        waveDir: windProvider.getWaveDirAtTime ? windProvider.getWaveDirAtTime(lat, lon, timeMs) : undefined,
+        waveHeight: windProvider.getWaveAtTime(lat, lon, timeMs),
+        wavePeriod: windProvider.getWavePeriodAtTime(lat, lon, timeMs),
+        waveDir: windProvider.getWaveDirAtTime(lat, lon, timeMs),
         gustKn: gustMs != null ? gustMs * 1.94384 : undefined,
         currentU: cur?.u,
         currentV: cur?.v,
@@ -495,9 +515,7 @@ async function ensureWindFrames(
   // Prefetch tiles for all needed steps
   const fetches: Promise<void>[] = [];
   for (const ms of stepsNeeded) {
-    if (provider.prefetchForTime) {
-      fetches.push(provider.prefetchForTime(ms));
-    }
+    fetches.push(provider.prefetchForTime(ms));
   }
   if (fetches.length > 0) await Promise.all(fetches);
 
@@ -524,14 +542,14 @@ async function ensureWindFrames(
 /**
  * Same as ensureWindFrames but for ocean currents.
  */
-async function ensureCurrentFrames(
+function ensureCurrentFrames(
   provider: TileCurrentProvider,
   timesMs: number[],
   session: WasmRouterSession,
   gridSpec: CorridorGridSpec,
   timeLo: number,
   timeHi: number,
-): Promise<void> {
+): void {
   const stepsNeeded = bracketingSteps(timesMs, timeLo, timeHi);
 
   for (const ms of stepsNeeded) {
@@ -573,6 +591,7 @@ function bracketingSteps(timesMs: number[], timeLo: number, timeHi: number): num
 
   // Include from the lower bracket through the upper bracket of timeHi
   for (let i = lo; i < timesMs.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i bounded by timesMs.length
     result.push(timesMs[i]!);
     if ((timesMs[i] ?? 0) > timeHi) break;
   }
@@ -583,7 +602,9 @@ function bracketingSteps(timesMs: number[], timeLo: number, timeHi: number): num
 // ── Message listener ──────────────────────────────────────────────────────────
 
 self.addEventListener('message', (event: MessageEvent) => {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- MessageEvent.data is inherently untyped
   const msg = event.data as InMessage;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive runtime type check
   if (msg.type === 'calculate') {
     handleCalculate(msg.payload).catch((e: unknown) => {
       const message = e instanceof Error ? e.message : String(e);

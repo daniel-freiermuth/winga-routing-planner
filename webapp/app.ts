@@ -3,10 +3,11 @@
 // The MapLibre map is created declaratively via <MapLibre> in App.svelte.
 
 import 'maplibre-gl/dist/maplibre-gl.css';
+import type { Marker } from 'maplibre-gl';
 
 declare global {
   interface Window {
-    _routeWeatherMarkers?: import('maplibre-gl').Marker[];
+    _routeWeatherMarkers?: Marker[];
   }
 }
 
@@ -19,7 +20,7 @@ import { authState } from './auth-state.svelte';
 
 function detectSkBase(): string {
   let stored = localStorage.getItem('wr-signalk-url');
-  if (stored) {
+  if (stored !== null) {
     stored = stored.trim().replace(/\/+$/, '');
     if (stored && !stored.startsWith('http://') && !stored.startsWith('https://')) {
       stored = 'http://' + stored;
@@ -38,7 +39,7 @@ function detectSkBase(): string {
 
 const SK_BASE = detectSkBase();
 
-function skFetch(path: string, options?: RequestInit): Promise<Response> {
+async function skFetch(path: string, options?: RequestInit): Promise<Response> {
   const url = path.startsWith('http') ? path : SK_BASE + path;
   const headers = new Headers(options?.headers);
   if (SK_BASE !== '' && prefs.skToken !== '') {
@@ -109,7 +110,9 @@ void checkAuth();
 
 // ── Mount App ─────────────────────────────────────────────────────────────────
 
+const appEl = document.getElementById('app');
+if (appEl === null) throw new Error('Missing #app element');
 mount(App, {
-  target: document.getElementById('app')!,
+  target: appEl,
   props: { skFetch, skWebSocketUrl, skLogin, skLogout },
 });

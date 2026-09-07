@@ -17,13 +17,13 @@ let allWindPoints: WindPoint[] = [];
 let allWavePoints: WavePoint[] = [];
 let allCurrentPoints: { lat: number; lon: number; u: number; v: number }[] = [];
 
-export function getWindPoints() {
+export function getWindPoints(): WindPoint[] {
   return allWindPoints;
 }
-export function getWavePoints() {
+export function getWavePoints(): WavePoint[] {
   return allWavePoints;
 }
-export function getCurrentPoints() {
+export function getCurrentPoints(): { lat: number; lon: number; u: number; v: number }[] {
   return allCurrentPoints;
 }
 
@@ -35,12 +35,11 @@ export async function fetchWindPoints(
 ): Promise<void> {
   if (!timeAxis.windTimesLoaded) return;
   const timeStr = timeAxis.windTimes[timeIdx];
-  if (!timeStr) {
+  if (timeStr === undefined || timeStr === '') {
     allWindPoints = [];
     windPoints.set([]);
     return;
   }
-  if (!map) return;
   const bounds = map.getBounds();
   const bbox = {
     latMin: bounds.getSouth(),
@@ -73,12 +72,11 @@ export async function fetchWavePoints(
 ): Promise<void> {
   if (!timeAxis.windTimesLoaded) return;
   const timeStr = timeAxis.windTimes[timeIdx];
-  if (!timeStr) {
+  if (timeStr === undefined || timeStr === '') {
     allWavePoints = [];
     wavePoints.set([]);
     return;
   }
-  if (!map) return;
   const bounds = map.getBounds();
   const bbox = {
     latMin: bounds.getSouth(),
@@ -116,7 +114,6 @@ export async function fetchWavePoints(
 }
 
 export async function fetchCurrentPoints(timeMs: number, map: MapLibreMap, signal?: AbortSignal): Promise<void> {
-  if (!map) return;
   const bounds = map.getBounds();
   const bbox = {
     latMin: bounds.getSouth(),

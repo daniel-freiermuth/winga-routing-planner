@@ -3,7 +3,10 @@
 
 import type maplibregl from 'maplibre-gl';
 
-type LatLon = { lat: number; lon: number };
+interface LatLon {
+  lat: number;
+  lon: number;
+}
 
 export const skState = $state({
   departureResources: [] as { label: string; lat: number; lon: number }[],

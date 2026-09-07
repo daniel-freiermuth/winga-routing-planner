@@ -49,6 +49,6 @@ module.exports = tseslint.config(
     },
   },
   {
-    ignores: ["dist/", "node_modules/", "data/", "claudisms/", ".opencode/"],
+    ignores: ["dist/", "node_modules/", "data/", "claudisms/", ".opencode/", "webapp/svelte.config.js", "webapp/wasm-pkg/"],
   },
 );

@@ -32,7 +32,7 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
   const { meta, intermediateIdxs, windSpeedMs, gribInfoFiles, c64Palette, forecastSkillHorizonHours, toDisplay, fmt } =
     opts;
 
-  if (!meta || meta.length < 2) return null;
+  if (meta.length < 2) return null;
 
   const hasWave = meta.some((m) => m.waveHeight != null);
 
@@ -46,7 +46,7 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
   const pw = VW - ml - mr,
     ph = VH - mt - mb;
 
-  const twsDisplayVals = meta.map((m) => toDisplay(m.tws ?? 0, 'speed', windSpeedMs));
+  const twsDisplayVals = meta.map((m) => toDisplay(m.tws, 'speed', windSpeedMs));
   const boatDisplayVals = meta.map((m) => (m.boatSpeed != null ? toDisplay(m.boatSpeed, 'speed') : null));
   const twsStep5 = windSpeedMs ? 2 : 5;
   const maxTwsDisp = Math.ceil(Math.max(...twsDisplayVals) / twsStep5) * twsStep5 || twsStep5;
@@ -79,8 +79,8 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
   if (hasGrib) {
     const refMs = Math.max(
       ...meta.map((m) => {
-        const f = m.gribFile ? gribInfoFiles.find((g) => g.path === m.gribFile) : null;
-        return f?.referenceTime ? new Date(f.referenceTime).getTime() : -Infinity;
+        const f = m.gribFile != null ? gribInfoFiles.find((g) => g.path === m.gribFile) : null;
+        return f?.referenceTime != null && f.referenceTime !== '' ? new Date(f.referenceTime).getTime() : -Infinity;
       }),
     );
     if (isFinite(refMs)) {
@@ -161,6 +161,7 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
 
   // Wind speed line
   el.push(
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i is valid index from meta.map
     `<path d="${meta.map((m, i) => (i === 0 ? 'M' : 'L') + xOf(i) + ',' + yWind(twsDisplayVals[i]!)).join(' ')}" fill="none" stroke="#89b4fa" stroke-width="1" stroke-linejoin="round"/>`,
   );
 
@@ -175,6 +176,7 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
         if (i - segStart >= 2) {
           const pts: string[] = [];
           for (let j = segStart; j < i; j++) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- j in [segStart, i) guaranteed valid
             pts.push((j === segStart ? 'M' : 'L') + xOf(j) + ',' + yLeft(boatDisplayVals[j]!));
           }
           el.push(`<path d="${pts.join(' ')}" fill="none" stroke="#fab387" stroke-width="1" stroke-linejoin="round"/>`);
@@ -188,6 +190,7 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
   if (hasWave) {
     let segStart = -1;
     for (let i = 0; i <= meta.length; i++) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i < meta.length checked in condition
       const hasData = i < meta.length && meta[i]!.waveHeight != null;
       if (hasData && segStart === -1) {
         segStart = i;
@@ -195,6 +198,7 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
         if (i - segStart >= 2) {
           const pts: string[] = [];
           for (let j = segStart; j < i; j++) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- j in [segStart, i) guaranteed valid; waveHeight non-null by segment start condition
             pts.push((j === segStart ? 'M' : 'L') + xOf(j) + ',' + yWave(meta[j]!.waveHeight!));
           }
           el.push(`<path d="${pts.join(' ')}" fill="none" stroke="#a6e3a1" stroke-width="1" stroke-linejoin="round"/>`);
@@ -209,13 +213,15 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
   const arrowY = mt + ph + 32;
 
   for (let i = 0; i < meta.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i < meta.length in loop bound
     const m = meta[i]!;
     const x = parseFloat(xOf(i));
     const d = new Date(m.time);
 
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i < meta.length in loop bound
     el.push(`<circle cx="${String(x)}" cy="${yWind(twsDisplayVals[i]!)}" r="1.5" fill="#89b4fa"/>`);
-    if (boatDisplayVals[i] != null)
-      el.push(`<circle cx="${String(x)}" cy="${yLeft(boatDisplayVals[i]!)}" r="1.5" fill="#fab387"/>`);
+    const bv = boatDisplayVals[i];
+    if (bv != null) el.push(`<circle cx="${String(x)}" cy="${yLeft(bv)}" r="1.5" fill="#fab387"/>`);
     if (hasWave && m.waveHeight != null)
       el.push(`<circle cx="${String(x)}" cy="${yWave(m.waveHeight)}" r="1.5" fill="#a6e3a1"/>`);
 
@@ -230,7 +236,7 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
       );
     }
 
-    const windDeg = ((m.windDir ?? 0) + 180) % 360;
+    const windDeg = (m.windDir + 180) % 360;
     const rad = (windDeg * Math.PI) / 180;
     const len = 9;
     const dx = Math.sin(rad) * len,
@@ -258,8 +264,10 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
     for (let i = 0; i < meta.length; i++) {
       const x1 = parseFloat(xOf(i));
       const x2 = i < meta.length - 1 ? parseFloat(xOf(i + 1)) : VW;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i < meta.length in loop bound
       const filePath = meta[i]!.gribFile;
       const colorIdx = filePath != null ? gribInfoFiles.findIndex((f) => f.path === filePath) : -1;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- colorIdx is valid modulo index
       const color = colorIdx >= 0 ? c64Palette[colorIdx % c64Palette.length]! : '#45475a';
       el.push(
         `<rect x="${x1.toFixed(1)}" y="${String(stripeTop)}" width="${(x2 - x1).toFixed(1)}" height="${String(stripeH)}" fill="${color}" opacity="0.7"/>`,
@@ -272,6 +280,7 @@ export function buildConditionsGraph(opts: ConditionsGraphOpts): ConditionsGraph
 
   // Intermediate waypoint markers
   for (let k = 0; k < intermediateIdxs.length; k++) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- k < intermediateIdxs.length in loop bound
     const x = parseFloat(xOf(intermediateIdxs[k]!));
     el.push(
       `<line x1="${String(x)}" y1="${String(mt)}" x2="${String(x)}" y2="${String(mt + ph)}" stroke="#f5c2e7" stroke-width="1" stroke-dasharray="4,3" opacity="0.75"/>`,

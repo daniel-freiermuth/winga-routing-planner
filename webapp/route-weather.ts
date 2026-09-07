@@ -45,7 +45,7 @@ export interface WaypointWeather {
  * @returns {Promise<WaypointWeather[]>}
  */
 export async function analyseRouteWeather(
-  waypoints: Array<{ lat: number; lon: number }>,
+  waypoints: { lat: number; lon: number }[],
   departureMs: number,
   polarCsv: string,
   onProgress?: (pct: number) => void,
@@ -59,6 +59,7 @@ export async function analyseRouteWeather(
   let cumDurationH = 0;
 
   for (let i = 0; i < waypoints.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const wp = waypoints[i]!;
     if (onProgress) onProgress(Math.round((i / waypoints.length) * 100));
 
@@ -66,12 +67,13 @@ export async function analyseRouteWeather(
     let legDistNm = 0;
     let legDurationH = 0;
     if (i > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const prev = waypoints[i - 1]!;
       legDistNm = haversineNM(prev.lat, prev.lon, wp.lat, wp.lon);
       // Duration for this leg: use the boat speed computed at the PREVIOUS waypoint
       const prevResult = results[i - 1];
       const prevSpeed = prevResult?.boatSpeedKn;
-      if (prevSpeed && prevSpeed > 0.1) {
+      if (prevSpeed != null && prevSpeed > 0.1) {
         legDurationH = legDistNm / prevSpeed;
       } else {
         // No wind / can't sail — assume 3 kn motoring as fallback
@@ -96,6 +98,7 @@ export async function analyseRouteWeather(
     let boatSpeedKn = null;
 
     if (i < waypoints.length - 1 && twdDeg !== null && twsKn !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const nextWp = waypoints[i + 1]!;
       const bearing = bearingTo(wp.lat, wp.lon, nextWp.lat, nextWp.lon);
       let twa = (bearing - twdDeg + 360) % 360;

@@ -6,8 +6,6 @@ import maplibregl from 'maplibre-gl';
 import type { WindPoint, WavePoint, CurrentPoint } from './stores';
 import { fmt as _fmt } from './units';
 
-type LatLon = { lat: number; lon: number };
-
 // ── Marker icons ──────────────────────────────────────────────────────────────
 
 export function greenIcon(): HTMLDivElement {
@@ -56,9 +54,7 @@ export function setupInfoPopupClick(map: maplibregl.Map, getState: () => InfoPop
       }
     }
     if (state.allWavePoints.length > 0 && state.waveVisible) {
-      const wp = state.allWavePoints.find(
-        (p) => Math.abs(p.lat - lat) < 0.04 && Math.abs(p.lon - lng) < 0.04 && p.waveHeight != null,
-      );
+      const wp = state.allWavePoints.find((p) => Math.abs(p.lat - lat) < 0.04 && Math.abs(p.lon - lng) < 0.04);
       if (wp) {
         const waveFmt = _fmt(wp.waveHeight, 'depth');
         lines.push(`Wave: ${waveFmt.num} ${waveFmt.sym}`);
@@ -76,7 +72,9 @@ export function setupInfoPopupClick(map: maplibregl.Map, getState: () => InfoPop
       new maplibregl.Popup({ closeOnClick: true }).setLngLat([lng, lat]).setHTML(lines.join('<br>')).addTo(map);
   };
   map.on('click', handler);
-  return () => map.off('click', handler);
+  return () => {
+    map.off('click', handler);
+  };
 }
 
 // ── Viewport change handler ───────────────────────────────────────────────────
@@ -107,7 +105,7 @@ export function setupViewportRefresh(map: maplibregl.Map, cb: ViewportCallbacks)
     }
     if (cb.isCurrentVisible() && cb.isWindTimesLoaded()) {
       const timeStr = cb.getWindTimes()[idx];
-      if (timeStr) cb.fetchCurrentPointsAt(new Date(timeStr).getTime());
+      if (timeStr !== undefined && timeStr !== '') cb.fetchCurrentPointsAt(new Date(timeStr).getTime());
     }
   };
   map.on('moveend', handler);

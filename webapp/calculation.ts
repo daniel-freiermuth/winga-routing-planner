@@ -11,7 +11,10 @@ import { buildConditionsGraph } from './conditions-graph';
 import { buildWorkerPayload, renderIsochrone, clearIsochrones } from './routing-engine';
 import type { IsochroneState } from './routing-engine';
 
-type LatLon = { lat: number; lon: number };
+interface LatLon {
+  lat: number;
+  lon: number;
+}
 
 const C64_PALETTE = [
   '#6c7086',
@@ -93,8 +96,11 @@ export interface CalculationApi {
 function findScrubberPosition(graphMeta: WaypointMeta[] | null, tMs: number) {
   if (!graphMeta || graphMeta.length < 2) return { wpIdx: -1, legIdx: -1 };
   for (let i = 0; i < graphMeta.length - 1; i++) {
-    const t1 = new Date(graphMeta[i]!.time).getTime();
-    const t2 = new Date(graphMeta[i + 1]!.time).getTime();
+    const entry = graphMeta[i];
+    const nextEntry = graphMeta[i + 1];
+    if (entry === undefined || nextEntry === undefined) continue;
+    const t1 = new Date(entry.time).getTime();
+    const t2 = new Date(nextEntry.time).getTime();
     if (tMs >= t1 && tMs <= t2) return { wpIdx: i, legIdx: i };
   }
   return { wpIdx: -1, legIdx: -1 };
@@ -158,7 +164,9 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
           return { labels: opts?.waypointLabels ?? true, intervalH: opts?.waypointLabelInterval ?? 0 };
         },
         routeWaypoints: ctx.getRouteWaypoints(),
-        setStatus: ctx.setStatus,
+        setStatus: (type: string, msg: string) => {
+          ctx.setStatus(type, msg);
+        },
       });
       if (!result) return;
       calcState.routeLayer = result.routeLayer;
@@ -172,8 +180,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
         if (!calcState.graphMeta || calcState.graphMeta.length === 0) return;
         const { lng, lat } = e.lngLat;
         // Find the closest waypoint (meta entry) to the click
-        const coords = route.feature?.geometry?.coordinates;
-        if (!coords) return;
+        const coords = route.feature.geometry.coordinates;
         let bestIdx = 0,
           bestDist = Infinity;
         for (let i = 0; i < coords.length; i++) {
@@ -195,13 +202,14 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
         map.getCanvas().style.cursor = '';
       });
       drawConditionsGraph(ctx, result.meta, result.intermediateIdxs);
-      const windTimes = ctx.getWindTimes();
       if (ctx.getWindTimesLoaded() && result.meta.length > 0) {
         // Inject route waypoint times into the scrubber time grid
         ctx.setRouteWaypointTimes(result.meta.map((m) => m.time));
         // Now find i0/iN in the updated windTimes (which now includes waypoint times)
         const updatedWindTimes = ctx.getWindTimes();
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const t0ms = new Date(result.meta[0]!.time).getTime();
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const tNms = new Date(result.meta[result.meta.length - 1]!.time).getTime();
         let i0 = updatedWindTimes.findIndex((t) => new Date(t).getTime() >= t0ms);
         let iN = updatedWindTimes.findIndex((t) => new Date(t).getTime() >= tNms);
@@ -210,14 +218,14 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
         ctx.lockScrubberToRoute(i0, iN);
         calcState.routeScrubberRange = { i0, iN };
         calcState.scrubberLockedToRoute = true;
-        ctx.fetchWindPointsAt(i0);
-        ctx.fetchWavePointsAt(i0);
+        void ctx.fetchWindPointsAt(i0);
+        void ctx.fetchWavePointsAt(i0);
       }
       // Fit map to route AFTER Svelte renders the conditions panel and the map
       // container resizes. Two rAF frames: first for Svelte DOM update, second
       // for MapLibre to process the container resize.
-      const coords = route.feature?.geometry?.coordinates;
-      if (coords && coords.length > 0) {
+      const coords = route.feature.geometry.coordinates;
+      if (coords.length > 0) {
         const lngs = coords.map((c: number[]) => c[0] ?? 0);
         const lats = coords.map((c: number[]) => c[1] ?? 0);
         const lngMin = Math.min(...lngs),
@@ -250,7 +258,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
     if (!calcState.graphMeta || calcState.graphMeta.length < 2 || !calcState.graphLayout) return;
     const windTimes = ctx.getWindTimes();
     const t = windTimes[windTimeIdx];
-    if (!t) return;
+    if (t === undefined || t === '') return;
     const tMs = new Date(t).getTime();
     const { wpIdx } = findScrubberPosition(calcState.graphMeta, tMs);
     if (wpIdx === calcState.prevHighlightWpIdx) return;
@@ -260,12 +268,12 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
     for (let i = 0; i < calcState.windBarbMarkers.length; i++) {
       const m = calcState.windBarbMarkers[i];
       if (!m) continue;
-      m.getElement()!.style.opacity = i === wpIdx ? '1' : '0.4';
+      m.getElement().style.opacity = i === wpIdx ? '1' : '0.4';
     }
 
     // Place/move red circle marker at the selected waypoint
     if (wpIdx >= 0 && calcState.routeLegCoords[wpIdx]) {
-      const wpCoord = calcState.routeLegCoords[wpIdx]![0]; // [lat, lng]
+      const wpCoord = calcState.routeLegCoords[wpIdx][0]; // [lat, lng]
       if (wpCoord) {
         const lngLat: [number, number] = [wpCoord[1], wpCoord[0]];
         if (!calcState.highlightMarker) {
@@ -300,13 +308,17 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async function startCalculation() {
     const startLatLon = ctx.getStartLatLon();
     const endLatLon = ctx.getEndLatLon();
     if (!startLatLon || !endLatLon) return;
 
     const depTime = ctx.getDepartureTime();
-    if (!depTime) return ctx.setStatus('error', 'Please set a departure time');
+    if (!depTime) {
+      ctx.setStatus('error', 'Please set a departure time');
+      return;
+    }
 
     clearIsochrones(isochroneState);
     ctx.setShowProgress(true);
@@ -316,7 +328,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
     ctx.setStatus('', 'Starting calculation…');
 
     const polarCsv = ctx.getPolarCsv();
-    if (!polarCsv) {
+    if (polarCsv === undefined || polarCsv === '') {
       ctx.setStatus('error', 'No polar diagram loaded — upload a polar CSV file');
       ctx.setCalculating(false);
       return;
@@ -326,8 +338,8 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
     const opts = ctx.getRoutingOptions()?.getOptions();
 
     // Unwrap Svelte $state proxies — structured cloning (postMessage) can't handle Proxy objects
-    const plainStart = startLatLon ? { lat: startLatLon.lat, lon: startLatLon.lon } : startLatLon;
-    const plainEnd = endLatLon ? { lat: endLatLon.lat, lon: endLatLon.lon } : endLatLon;
+    const plainStart = { lat: startLatLon.lat, lon: startLatLon.lon };
+    const plainEnd = { lat: endLatLon.lat, lon: endLatLon.lon };
     const plainWaypoints = ctx.getRouteWaypoints().map((wp) => ({ lat: wp.lat, lon: wp.lon }));
 
     routingWorker.postMessage(
@@ -356,6 +368,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
 
   // Wire worker message handler
   routingWorker.addEventListener('message', (e) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
     const j = e.data as {
       type: string;
       pct?: number;
@@ -393,7 +406,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
       if (j.clearIsochrones === true) {
         clearIsochrones(isochroneState);
       }
-      if (j.frontier?.length && ctx.getIsochroneEnabled()) {
+      if (j.frontier !== undefined && j.frontier.length > 0 && ctx.getIsochroneEnabled()) {
         const origin = j.legOrigin ? { lat: j.legOrigin[0], lon: j.legOrigin[1] } : ctx.getStartLatLon();
         if (origin) renderIsochrone(j.frontier, origin, isochroneState);
       }
@@ -413,7 +426,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
               coordinatesMeta: j.route.map((p, i) => {
                 const meta: WaypointMeta = {
                   name: '',
-                  time: typeof p.time === 'string' ? p.time : new Date(p.time as unknown as number).toISOString(),
+                  time: typeof p.time === 'string' ? p.time : new Date(p.time).toISOString(),
                   windDir: p.windDir,
                   ctw: p.ctw,
                   twa: p.twa,
@@ -436,6 +449,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
                 }
                 // COG and SOG from consecutive positions (ground track)
                 if (i > 0) {
+                  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                   const prev = j.route![i - 1]!;
                   const dLat = ((p.lat - prev.lat) * Math.PI) / 180;
                   const dLon = ((p.lon - prev.lon) * Math.PI) / 180;
@@ -449,9 +463,8 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
                   const x = Math.cos(lat1r) * Math.sin(lat2r) - Math.sin(lat1r) * Math.cos(lat2r) * Math.cos(dLon);
                   meta.cogDeg = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
                   // SOG in knots
-                  const t0 =
-                    typeof prev.time === 'string' ? new Date(prev.time).getTime() : (prev.time as unknown as number);
-                  const t1 = typeof p.time === 'string' ? new Date(p.time).getTime() : (p.time as unknown as number);
+                  const t0 = typeof prev.time === 'string' ? new Date(prev.time).getTime() : Number(prev.time);
+                  const t1 = typeof p.time === 'string' ? new Date(p.time).getTime() : Number(p.time);
                   const dtH = (t1 - t0) / 3600000;
                   meta.sogKn = dtH > 0 ? distNM / dtH : 0;
                 }
@@ -463,7 +476,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
         calcState.pendingRouteData = routeData;
         ctx.setStatus('done', 'Route calculated');
         fetchAndDrawRoute();
-      } else if (j.error) {
+      } else if (j.error !== undefined && j.error !== '') {
         ctx.setStatus('error', j.error);
         ctx.showFailurePopup(j.error, false);
       } else {

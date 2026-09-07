@@ -5,7 +5,6 @@ import { writable } from 'svelte/store';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type LatLon = { lat: number; lon: number };
 export interface WindPoint {
   lat: number;
   lon: number;

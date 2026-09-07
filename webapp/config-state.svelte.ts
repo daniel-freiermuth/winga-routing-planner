@@ -10,5 +10,3 @@ export const configState = $state({
   forecastSkillHorizonHours: 96,
   unitPrefs: null as Record<string, UnitPref> | null,
 });
-
-type ConfigState = typeof configState;
