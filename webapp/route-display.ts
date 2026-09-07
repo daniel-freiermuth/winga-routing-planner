@@ -1,6 +1,6 @@
 // Route rendering — draws the route polyline on the map.
 
-import maplibregl from 'maplibre-gl';
+import type maplibregl from 'maplibre-gl';
 import type { WaypointMeta, RouteData } from './types';
 
 interface FmtResult {
@@ -31,11 +31,7 @@ const ROUTE_SOURCE = 'calculated-route';
 const ROUTE_LAYER = 'calculated-route-line';
 
 export function drawRoute(route: RouteData, ctx: RouteDisplayCtx): RouteDisplayResult | null {
-  const coords = route.feature?.geometry?.coordinates;
-  if (!coords) {
-    ctx.setStatus('error', 'Route has no coordinates');
-    return null;
-  }
+  const coords = route.feature.geometry.coordinates;
 
   // ── Route polyline ──────────────────────────────────────────────────────────
   ctx.map.addSource(ROUTE_SOURCE, {
@@ -45,6 +41,7 @@ export function drawRoute(route: RouteData, ctx: RouteDisplayCtx): RouteDisplayR
       properties: {},
       geometry: {
         type: 'LineString',
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         coordinates: coords.map(([lng, lat]: number[]) => [lng!, lat!]),
       },
     },
@@ -57,13 +54,15 @@ export function drawRoute(route: RouteData, ctx: RouteDisplayCtx): RouteDisplayR
   });
   const routeLayer = { sourceId: ROUTE_SOURCE, layerId: ROUTE_LAYER };
 
-  const meta = route.feature?.properties?.coordinatesMeta ?? [];
+  const meta = route.feature.properties.coordinatesMeta;
 
   // ── Leg coordinates for highlighting ────────────────────────────────────────
   const routeLegCoords: [number, number][][] = [];
   for (let i = 0; i < coords.length - 1; i++) {
     routeLegCoords.push([
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       [coords[i]![1]!, coords[i]![0]!],
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       [coords[i + 1]![1]!, coords[i + 1]![0]!],
     ]);
   }
@@ -74,6 +73,7 @@ export function drawRoute(route: RouteData, ctx: RouteDisplayCtx): RouteDisplayR
       let best = -1,
         bestDist = Infinity;
       coords.forEach(([lng, lat]: number[], i: number) => {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const d = Math.hypot(lat! - wp.lat, lng! - wp.lon);
         if (d < bestDist) {
           bestDist = d;

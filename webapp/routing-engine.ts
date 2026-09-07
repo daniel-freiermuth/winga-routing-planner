@@ -1,6 +1,6 @@
 // Routing engine — dispatches calculation to the Web Worker and processes results.
 
-import maplibregl from 'maplibre-gl';
+import type maplibregl from 'maplibre-gl';
 import { sortByBearing, splitByAngularGap } from './utils';
 
 export interface IsochroneState {
@@ -27,12 +27,6 @@ interface RoutingRequest {
     tackPenaltySec?: number | undefined;
     tackThresholdDeg?: number | undefined;
   };
-}
-
-interface RoutingCallbacks {
-  onProgress: (pct: number, frontier?: number[][]) => void;
-  onResult: (route: unknown) => void;
-  onError: (msg: string) => void;
 }
 
 const ISOCHRONE_GAP_THRESHOLD_DEG = 10;
@@ -62,17 +56,20 @@ export function renderIsochrone(
   isochroneState: IsochroneState,
 ): void {
   const pts = sortByBearing(
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     frontier.map((pt) => [pt[0]!, pt[1]!]),
     origin,
   );
   const segments = splitByAngularGap(pts, origin, ISOCHRONE_GAP_THRESHOLD_DEG);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const color = ISOCHRONE_COLOURS[isochroneState.count % ISOCHRONE_COLOURS.length]!;
   const isoIdx = isochroneState.count;
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const seg = segments[segIdx]!;
     if (seg.length >= 2) {
-      const sourceId = `isochrone-${isoIdx}-${segIdx}`;
-      const layerId = `isochrone-${isoIdx}-${segIdx}-line`;
+      const sourceId = `isochrone-${String(isoIdx)}-${String(segIdx)}`;
+      const layerId = `isochrone-${String(isoIdx)}-${String(segIdx)}-line`;
       isochroneState.map.addSource(sourceId, {
         type: 'geojson',
         data: {
@@ -80,6 +77,7 @@ export function renderIsochrone(
           properties: {},
           geometry: {
             type: 'LineString',
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             coordinates: seg.map(([lat, lon]) => [lon!, lat!]),
           },
         },

@@ -46,7 +46,7 @@ const DEFAULTS: Prefs = {
 function load(): Prefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Prefs>) };
+    if (raw !== null) return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Prefs>) }; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
   } catch {
     /* corrupt data — use defaults */
   }
