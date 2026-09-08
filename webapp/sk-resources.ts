@@ -1,6 +1,6 @@
 // SignalK resource loading: departure points, waypoint routes, vessel position.
 
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { skState } from './sk-state.svelte';
 
 /** External dependencies injected from app.ts. */

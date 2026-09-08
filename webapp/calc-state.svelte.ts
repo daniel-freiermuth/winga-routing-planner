@@ -6,7 +6,7 @@
 // CalcState + freshCalcState(). If it's a map resource, add cleanup in resetCalcState().
 
 import type { WaypointMeta, GraphLayout, RouteData } from './types';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 
 interface SourceAndLayer {
   sourceId: string;

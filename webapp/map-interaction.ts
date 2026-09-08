@@ -1,7 +1,7 @@
 // Map interaction handlers — info popups, viewport-change re-fetches,
 // and marker icon factories.
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 
 import type { WindPoint, WavePoint, CurrentPoint } from './stores';
 import { fmt as _fmt } from './units';

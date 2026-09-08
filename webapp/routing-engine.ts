@@ -1,6 +1,6 @@
 // Routing engine — dispatches calculation to the Web Worker and processes results.
 
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { sortByBearing, splitByAngularGap } from './utils';
 
 export interface IsochroneState {

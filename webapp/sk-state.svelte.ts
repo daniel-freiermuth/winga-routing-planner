@@ -1,7 +1,7 @@
 // Shared reactive state for the SK resources module.
 // Both App.svelte and sk-resources.ts import from here.
 
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 
 interface LatLon {
   lat: number;
