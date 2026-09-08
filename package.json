@@ -35,7 +35,7 @@
     "test": "tsx --test 'src/lib/__tests__/**/*.test.ts'",
     "lint": "eslint src/ webapp/",
     "check": "tsc --noEmit && npx tsc --noEmit -p webapp/tsconfig.json && svelte-check --workspace webapp && eslint src/ webapp/ && tsx --test 'src/lib/__tests__/**/*.test.ts'",
-    "check:rust": "cd wasm-router && cargo clippy --target wasm32-unknown-unknown -- -D warnings && cargo fmt --check",
+    "check:rust": "cd wasm-router && cargo clippy --target wasm32-unknown-unknown -- -D warnings && cargo fmt --check && cargo test",
     "check:all": "pnpm -C windy-lib/ts build && pnpm build:wasm && pnpm check && pnpm format:check && pnpm check:rust && pnpm build:webapp",
     "format": "prettier --write src/ webapp/ && cd wasm-router && cargo fmt",
     "format:check": "prettier --check src/ webapp/"
