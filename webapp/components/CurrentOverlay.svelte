@@ -4,7 +4,7 @@
   // and DRIFT (speed in knots) as a text label.
 
   import { onDestroy } from 'svelte';
-  import maplibregl from 'maplibre-gl';
+  import * as maplibregl from 'maplibre-gl';
   import type { CurrentPoint } from '../stores';
 
   interface Props {

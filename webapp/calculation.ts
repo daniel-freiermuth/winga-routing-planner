@@ -1,7 +1,7 @@
 // Calculation orchestration — wires the routing worker, draws results,
 // and manages scrubber highlighting for the calculated route.
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { calcState, removeSourceAndLayer } from './calc-state.svelte';
 import type { WaypointMeta, GraphLayout, RouteData, GribFileMeta } from './types';
 import type { ScrubberState } from './scrubber-controller';

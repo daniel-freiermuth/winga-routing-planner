@@ -43,7 +43,7 @@
   import { analyseRouteWeather } from '../route-weather';
   import * as dataLayer from '../data-layer';
   import { loadConfig as _loadConfig } from '../config';
-  import maplibregl from 'maplibre-gl';
+  import * as maplibregl from 'maplibre-gl';
   import { MapLibre } from 'svelte-maplibre-gl';
   import { haversineNM, bearingTo } from '../../src/lib/geo';
 

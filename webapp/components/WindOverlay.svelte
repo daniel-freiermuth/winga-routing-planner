@@ -3,7 +3,7 @@
   // Receives map, points, and visibility as props from App.svelte.
 
   import { onDestroy } from 'svelte';
-  import maplibregl from 'maplibre-gl';
+  import * as maplibregl from 'maplibre-gl';
   import type { WindPoint } from '../stores';
   import { windBarbSvg } from '../wind-barb';
 

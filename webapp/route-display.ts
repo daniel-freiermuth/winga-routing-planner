@@ -1,6 +1,6 @@
 // Route rendering — draws the route polyline on the map.
 
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import type { WaypointMeta, RouteData } from './types';
 
 interface FmtResult {
