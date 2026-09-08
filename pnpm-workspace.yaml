@@ -3,4 +3,3 @@ packages:
 
 allowBuilds:
   esbuild: true
-  gdal-async: true
