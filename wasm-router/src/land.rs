@@ -596,4 +596,73 @@ mod tests {
         let idx = build_test_index();
         assert!(!idx.is_on_land(-10.0, -10.0));
     }
+
+    /// Build a test index with a small island straddling the prime meridian
+    /// (lon -0.5 to 0.5, lat -0.5 to 0.5). Used to detect antimeridian
+    /// false positives: a segment crossing ±180° should NOT hit this island.
+    fn build_prime_meridian_index() -> LandIndex {
+        let exterior = vec![
+            -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5,
+        ];
+        let poly = LandPolygon {
+            bbox_lat_min: -0.5,
+            bbox_lat_max: 0.5,
+            bbox_lon_min: -0.5,
+            bbox_lon_max: 0.5,
+            exterior,
+        };
+        let mut edge_grid: HashMap<u32, Vec<u32>> = HashMap::new();
+        let ring = &poly.exterior;
+        let nv = ring.len() / 2;
+        for ei in 0..nv {
+            let ni = if ei + 1 < nv { ei + 1 } else { 0 };
+            let lon_a = ring[ei * 2];
+            let lat_a = ring[ei * 2 + 1];
+            let lon_b = ring[ni * 2];
+            let lat_b = ring[ni * 2 + 1];
+            let lat_lo = (lat_a.min(lat_b) / EDGE_CELL_DEG).floor() as i32;
+            let lat_hi = (lat_a.max(lat_b) / EDGE_CELL_DEG).floor() as i32;
+            let lon_lo = (lon_a.min(lon_b) / EDGE_CELL_DEG).floor() as i32;
+            let lon_hi = (lon_a.max(lon_b) / EDGE_CELL_DEG).floor() as i32;
+            for la in lat_lo..=lat_hi {
+                for lo in lon_lo..=lon_hi {
+                    let key = edge_cell_key(la, lo);
+                    let cell = edge_grid.entry(key).or_default();
+                    cell.push(0);
+                    cell.push(ei as u32);
+                }
+            }
+        }
+        let mut poly_grid: HashMap<u32, Vec<u32>> = HashMap::new();
+        let key = ((0 + 90) as u32) * 360 + ((0 + 180) as u32);
+        poly_grid.entry(key).or_default().push(0);
+        LandIndex {
+            polygons: vec![poly],
+            edge_grid,
+            poly_grid,
+        }
+    }
+
+    #[test]
+    fn segment_crosses_land_antimeridian_no_false_positive() {
+        let idx = build_prime_meridian_index();
+        // Segment from (lat=0, lon=179.5) to (lat=0, lon=-179.5) should cross
+        // the antimeridian via the short 1° arc — it must NOT hit the island at
+        // lon=0 (which is ~180° away). With the bug, d_lon = -359 causes the
+        // DDA to walk the long way through lon=0, producing a false positive.
+        assert!(
+            !idx.segment_crosses_land(0.0, 179.5, 0.0, -179.5),
+            "antimeridian segment falsely reported crossing land at lon=0"
+        );
+    }
+
+    #[test]
+    fn segment_crosses_land_antimeridian_reverse() {
+        let idx = build_prime_meridian_index();
+        // Same test in the opposite direction: (-179.5 → 179.5)
+        assert!(
+            !idx.segment_crosses_land(0.0, -179.5, 0.0, 179.5),
+            "antimeridian segment (reverse) falsely reported crossing land at lon=0"
+        );
+    }
 }
