@@ -97,11 +97,15 @@ function closestStepIdx(steps: { iso: string; compact: string }[], targetMs: num
 }
 
 /** Determine all tile coordinates at zoom z that cover a bounding box. */
-function tilesForBbox(bbox: BoundingBox, z: number): { x: number; y: number }[] {
+export function tilesForBbox(bbox: BoundingBox, z: number): { x: number; y: number }[] {
   const tl = latLonToTile(bbox.latMax, bbox.lonMin, z);
   const br = latLonToTile(bbox.latMin, bbox.lonMax, z);
+  const n = 2 ** z;
+  // When tl.x > br.x the bbox crosses the antimeridian: wrap x through the tile count.
+  const xCount = tl.x <= br.x ? br.x - tl.x + 1 : n - tl.x + br.x + 1;
   const tiles: { x: number; y: number }[] = [];
-  for (let x = tl.x; x <= br.x; x++) {
+  for (let i = 0; i < xCount; i++) {
+    const x = (tl.x + i) % n;
     for (let y = tl.y; y <= br.y; y++) {
       tiles.push({ x, y });
     }
