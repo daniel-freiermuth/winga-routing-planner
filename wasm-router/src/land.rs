@@ -262,6 +262,26 @@ impl LandIndex {
     /// segment-segment intersection tests. Does **not** check whether the
     /// endpoints themselves are inside a polygon — call [`is_on_land`] for that.
     pub fn segment_crosses_land(&self, lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> bool {
+        // Antimeridian crossing: split into two sub-segments at ±180° so each
+        // half stays on one side and the DDA walk + intersection test are correct.
+        let d_lon_raw = lon2 - lon1;
+        if d_lon_raw > 180.0 {
+            let d_lon_short = d_lon_raw - 360.0;
+            let d_lat = lat2 - lat1;
+            let t = (-180.0 - lon1) / d_lon_short;
+            let lat_cross = lat1 + t * d_lat;
+            return self.segment_crosses_land(lat1, lon1, lat_cross, -180.0)
+                || self.segment_crosses_land(lat_cross, 180.0, lat2, lon2);
+        }
+        if d_lon_raw < -180.0 {
+            let d_lon_short = d_lon_raw + 360.0;
+            let d_lat = lat2 - lat1;
+            let t = (180.0 - lon1) / d_lon_short;
+            let lat_cross = lat1 + t * d_lat;
+            return self.segment_crosses_land(lat1, lon1, lat_cross, 180.0)
+                || self.segment_crosses_land(lat_cross, -180.0, lat2, lon2);
+        }
+
         let d = EDGE_CELL_DEG;
         let mut lat_cell = (lat1 / d).floor() as i32;
         let mut lon_cell = (lon1 / d).floor() as i32;
@@ -269,7 +289,7 @@ impl LandIndex {
         let lon_end = (lon2 / d).floor() as i32;
 
         let d_lat = lat2 - lat1;
-        let d_lon = lon2 - lon1;
+        let d_lon = d_lon_raw;
 
         let s_lat: i32 = if d_lat > 0.0 {
             1
@@ -601,9 +621,7 @@ mod tests {
     /// (lon -0.5 to 0.5, lat -0.5 to 0.5). Used to detect antimeridian
     /// false positives: a segment crossing ±180° should NOT hit this island.
     fn build_prime_meridian_index() -> LandIndex {
-        let exterior = vec![
-            -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5,
-        ];
+        let exterior = vec![-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5];
         let poly = LandPolygon {
             bbox_lat_min: -0.5,
             bbox_lat_max: 0.5,
