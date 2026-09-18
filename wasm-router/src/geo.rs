@@ -106,4 +106,139 @@ mod tests {
         assert_eq!(wrap_lon(-180.0), -180.0);
         assert_eq!(wrap_lon(180.0), -180.0);
     }
+
+    // --- haversine_nm ---
+
+    #[test]
+    fn haversine_nm_same_point_is_zero() {
+        assert_eq!(haversine_nm(51.0, 4.0, 51.0, 4.0), 0.0);
+    }
+
+    #[test]
+    fn haversine_nm_london_to_paris() {
+        // Parity with TS geo.test.ts: ~185 nm
+        let dist = haversine_nm(51.5, -0.12, 48.85, 2.35);
+        assert!(
+            dist > 183.0 && dist < 187.0,
+            "expected ~185 nm, got {dist:.1}"
+        );
+    }
+
+    #[test]
+    fn haversine_nm_one_degree_latitude() {
+        // Parity with TS: one degree of latitude ≈ 60 nm
+        let dist = haversine_nm(50.0, 10.0, 51.0, 10.0);
+        assert!((dist - 60.0).abs() < 0.5, "expected ~60 nm, got {dist:.2}");
+    }
+
+    #[test]
+    fn haversine_nm_is_symmetric() {
+        let ab = haversine_nm(51.5, -0.12, 48.85, 2.35);
+        let ba = haversine_nm(48.85, 2.35, 51.5, -0.12);
+        assert!(
+            (ab - ba).abs() < 1e-10,
+            "haversine should be symmetric: {ab} vs {ba}"
+        );
+    }
+
+    // --- bearing_to ---
+
+    #[test]
+    fn bearing_to_due_north() {
+        let b = bearing_to(50.0, 10.0, 51.0, 10.0);
+        assert!(
+            b.abs() < 0.01 || (b - 360.0).abs() < 0.01,
+            "expected 0°, got {b}"
+        );
+    }
+
+    #[test]
+    fn bearing_to_due_east() {
+        let b = bearing_to(50.0, 10.0, 50.0, 11.0);
+        assert!((b - 90.0).abs() < 1.0, "expected ~90°, got {b}");
+    }
+
+    #[test]
+    fn bearing_to_due_south() {
+        let b = bearing_to(51.0, 10.0, 50.0, 10.0);
+        assert!((b - 180.0).abs() < 0.01, "expected 180°, got {b}");
+    }
+
+    #[test]
+    fn bearing_to_due_west() {
+        let b = bearing_to(50.0, 11.0, 50.0, 10.0);
+        assert!((b - 270.0).abs() < 1.0, "expected ~270°, got {b}");
+    }
+
+    // --- destination_point: boundary & parity ---
+
+    #[test]
+    fn destination_point_zero_distance_returns_start() {
+        let (lat, lon) = destination_point(48.0, 2.0, 0.0, 45.0);
+        assert!(
+            (lat - 48.0).abs() < 1e-10,
+            "zero distance should keep lat, got {lat}"
+        );
+        assert!(
+            (lon - 2.0).abs() < 1e-10,
+            "zero distance should keep lon, got {lon}"
+        );
+    }
+
+    #[test]
+    fn destination_point_north_60nm() {
+        // Parity with TS: 60 nm due north from (50, 10) → lat ≈ 51, lon ≈ 10
+        let (lat, lon) = destination_point(50.0, 10.0, 60.0, 0.0);
+        assert!((lat - 51.0).abs() < 0.01, "expected lat ~51, got {lat}");
+        assert!((lon - 10.0).abs() < 0.01, "expected lon ~10, got {lon}");
+    }
+
+    #[test]
+    fn destination_point_round_trip_distance() {
+        // Parity with TS: travel 100 nm at 45°, measure distance back → 100 nm
+        let (lat, lon) = destination_point(48.0, 2.0, 100.0, 45.0);
+        let dist = haversine_nm(48.0, 2.0, lat, lon);
+        assert!(
+            (dist - 100.0).abs() < 0.01,
+            "round-trip distance off: {dist}"
+        );
+    }
+
+    #[test]
+    fn destination_point_south_pole_vicinity() {
+        // Start near the south pole, head further south
+        let (lat, lon) = destination_point(-89.0, 0.0, 60.0, 180.0);
+        assert!(
+            lat >= -90.0 && lat <= 90.0,
+            "latitude must be in [-90, 90], got {lat}"
+        );
+        assert!(
+            lat < -89.5,
+            "should end very close to south pole, got {lat}"
+        );
+        assert!(
+            lon >= -180.0 && lon <= 180.0,
+            "longitude must be in [-180, 180], got {lon}"
+        );
+    }
+
+    #[test]
+    fn destination_point_all_cardinal_directions() {
+        // From (0, 0), 60 nm in each cardinal direction
+        let (lat_n, lon_n) = destination_point(0.0, 0.0, 60.0, 0.0);
+        assert!(lat_n > 0.9, "north: expected lat > 0.9, got {lat_n}");
+        assert!(lon_n.abs() < 0.01, "north: lon should stay ~0, got {lon_n}");
+
+        let (lat_e, lon_e) = destination_point(0.0, 0.0, 60.0, 90.0);
+        assert!(lat_e.abs() < 0.01, "east: lat should stay ~0, got {lat_e}");
+        assert!(lon_e > 0.9, "east: expected lon > 0.9, got {lon_e}");
+
+        let (lat_s, lon_s) = destination_point(0.0, 0.0, 60.0, 180.0);
+        assert!(lat_s < -0.9, "south: expected lat < -0.9, got {lat_s}");
+        assert!(lon_s.abs() < 0.01, "south: lon should stay ~0, got {lon_s}");
+
+        let (lat_w, lon_w) = destination_point(0.0, 0.0, 60.0, 270.0);
+        assert!(lat_w.abs() < 0.01, "west: lat should stay ~0, got {lat_w}");
+        assert!(lon_w < -0.9, "west: expected lon < -0.9, got {lon_w}");
+    }
 }
