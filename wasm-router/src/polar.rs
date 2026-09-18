@@ -30,6 +30,12 @@ impl PolarData {
         // Clamp TWA to 0–180
         let twa = twa.clamp(0.0, 180.0);
 
+        // Below the polar's minimum close-hauled angle the boat cannot make
+        // progress against the wind.
+        if twa < self.twa[0] {
+            return 0.0;
+        }
+
         // Find TWA bracket
         let (twa_lo, twa_hi, twa_frac) = Self::bracket(&self.twa, twa);
 
@@ -97,5 +103,48 @@ impl PolarData {
             0.0
         };
         (lo, hi, frac)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Minimal polar matching src/lib/__tests__/polar.test.ts:
+    // TWS: 10, 20
+    // TWA: 30 →  3,  5
+    //       90 →  5, 10
+    //      180 →  3,  6
+    fn test_polar() -> PolarData {
+        PolarData::from_flat(
+            &[30.0, 90.0, 180.0],
+            &[10.0, 20.0],
+            &[3.0, 5.0, 5.0, 10.0, 3.0, 6.0],
+        )
+    }
+
+    #[test]
+    fn twa_below_polar_minimum_returns_zero() {
+        let p = test_polar();
+        // TWA=10 is below the polar minimum of 30 — boat cannot sail here.
+        assert_eq!(p.interpolate(10.0, 12.0), 0.0);
+        // TWA=0 (dead into the wind)
+        assert_eq!(p.interpolate(0.0, 15.0), 0.0);
+        // TWA=29.9 — just below the minimum
+        assert_eq!(p.interpolate(29.9, 10.0), 0.0);
+    }
+
+    #[test]
+    fn twa_at_polar_minimum_returns_nonzero() {
+        let p = test_polar();
+        // TWA=30 is exactly the minimum — boat CAN sail here.
+        assert!(p.interpolate(30.0, 10.0) > 0.0);
+    }
+
+    #[test]
+    fn exact_grid_point() {
+        let p = test_polar();
+        let spd = p.interpolate(90.0, 10.0);
+        assert!((spd - 5.0).abs() < 0.001, "expected 5, got {spd}");
     }
 }
