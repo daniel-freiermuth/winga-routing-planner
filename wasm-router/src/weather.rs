@@ -1,3 +1,4 @@
+// Wind forecast store for the WASM router: holds time-ordered grid frames and samples them by interpolation.
 /// Wind weather data store with bilinear spatial and linear temporal interpolation.
 ///
 /// Stores GRIB-style forecast frames as flat row-major grids and provides
@@ -6,7 +7,7 @@
 /// A single forecast frame on a regular lat/lon grid.
 struct WeatherFrame {
     time_ms: f64,
-    /// Wind U component (west→east) in m/s, row-major [lat_idx * n_lon + lon_idx].
+    /// Wind U component (west→east) in m/s, row-major `[lat_idx * n_lon + lon_idx]`.
     u: Vec<f32>,
     /// Wind V component (south→north) in m/s, same layout.
     v: Vec<f32>,
@@ -45,10 +46,10 @@ impl WeatherFrame {
         let t_lat = lat_idx_f - lat1 as f64;
         let t_lon = lon_idx_f - lon1 as f64;
 
-        let c00 = data[lat1 * self.n_lon + lon1] as f64;
-        let c01 = data[lat1 * self.n_lon + lon_hi] as f64;
-        let c10 = data[lat_hi * self.n_lon + lon1] as f64;
-        let c11 = data[lat_hi * self.n_lon + lon_hi] as f64;
+        let c00 = f64::from(data[lat1 * self.n_lon + lon1]);
+        let c01 = f64::from(data[lat1 * self.n_lon + lon_hi]);
+        let c10 = f64::from(data[lat_hi * self.n_lon + lon1]);
+        let c11 = f64::from(data[lat_hi * self.n_lon + lon_hi]);
 
         let v = c00 * (1.0 - t_lat) * (1.0 - t_lon)
             + c01 * (1.0 - t_lat) * t_lon
@@ -108,7 +109,7 @@ impl WeatherStore {
         debug_assert_eq!(u.len(), n_lat * n_lon);
         debug_assert_eq!(v.len(), n_lat * n_lon);
         debug_assert!(
-            self.frames.is_empty() || self.frames.last().unwrap().time_ms <= time_ms,
+            self.frames.last().is_none_or(|f| f.time_ms <= time_ms),
             "frames must be pushed in chronological order"
         );
         self.frames.push(WeatherFrame {

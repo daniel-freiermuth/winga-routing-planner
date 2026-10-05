@@ -2,7 +2,7 @@
 // Mirrors src/lib/polar.ts interpolateBoatSpeed.
 
 /// Polar diagram: TWA values (degrees, ascending 0–180), TWS values (knots, ascending),
-/// and a row-major speed table [twa_idx * n_tws + tws_idx].
+/// and a row-major speed table `[twa_idx * n_tws + tws_idx]`.
 pub struct PolarData {
     pub twa: Vec<f64>,
     pub tws: Vec<f64>,
@@ -84,7 +84,7 @@ impl PolarData {
         let mut lo = 0usize;
         let mut hi = arr.len() - 1;
         while lo + 1 < hi {
-            let mid = (lo + hi) / 2;
+            let mid = usize::midpoint(lo, hi);
             if arr[mid] <= val {
                 lo = mid;
             } else {
