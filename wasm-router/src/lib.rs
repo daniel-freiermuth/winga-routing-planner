@@ -1,5 +1,4 @@
 // WASM isochrone routing — session-based entry point for wasm-bindgen.
-#![allow(clippy::too_many_arguments)]
 //
 // The JS worker creates a RouterSession, pushes weather frames on demand,
 // and drives the routing loop one step at a time. No per-point JS callbacks
@@ -91,6 +90,11 @@ impl RouterSession {
     /// - `options`: `RoutingOptions` object with named fields; missing,
     ///   non-finite, out-of-range or unsupported values are rejected
     /// - `land_index`: raw binary land-edge-index buffer (LNDX or DLND, version 2)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `land_index` is not a valid land-edge-index buffer or
+    /// `legs` holds fewer than two points.
     #[wasm_bindgen(constructor)]
     pub fn new(
         polar_twa: &[f64],
@@ -233,9 +237,8 @@ impl RouterSession {
             return outcome;
         }
 
-        let state = match self.leg_state.as_mut() {
-            Some(s) => s,
-            None => return StepStatus::Blocked,
+        let Some(state) = self.leg_state.as_mut() else {
+            return StepStatus::Blocked;
         };
 
         let result = state.step(
@@ -360,8 +363,7 @@ impl RouterSession {
                 let leg_departure = self
                     .full_route
                     .last()
-                    .map(|p| p.time_ms)
-                    .unwrap_or(self.departure_ms);
+                    .map_or(self.departure_ms, |p| p.time_ms);
                 let (s_lat, s_lon, e_lat, e_lon) = self.legs[self.current_leg];
                 self.leg_state = Some(LegState::new(
                     s_lat,
