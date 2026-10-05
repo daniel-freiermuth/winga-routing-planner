@@ -104,9 +104,9 @@ export interface LandIndex {
   grid: Map<number, number[]>; // cell key → polygon indices
 }
 
-// Edge-tile index for fast segment-crossing checks.
+// Edge-tile index for segment-crossing and point-on-land checks (built offline by scripts/prepare-land-data.py).
 // edgeGrid: 0.1° cell key → flat Uint32Array of [polyIdx, edgeIdx, polyIdx, edgeIdx, ...].
-// polyGrid: 1° cell key → polygon indices (same key formula as LandIndex.grid), for isPointOnLand.
+// polyGrid: 1° cell key → polygon indices (same key formula as LandIndex.grid), for point-in-polygon checks.
 export interface LandEdgeIndex {
   polygons: LandPolygon[];
   edgeGrid: Map<number, Uint32Array>;

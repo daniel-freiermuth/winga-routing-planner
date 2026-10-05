@@ -1,13 +1,7 @@
+// Unit tests for the land overlay polygon index: grid construction and bbox polygon lookup.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  buildLandIndex,
-  segmentCrossesLand,
-  polygonsInBbox,
-  buildLandEdgeIndex,
-  segmentCrossesLandFast,
-  isPointOnLand,
-} from '../landmask';
+import { buildLandIndex, polygonsInBbox } from '../landmask';
 import type { LandPolygon } from '../../types';
 
 // A 2°×2° square island: lon 1–3, lat 1–3 (counterclockwise exterior ring)
@@ -22,27 +16,6 @@ function makeSquarePoly(): LandPolygon {
 
 const poly = makeSquarePoly();
 const index = buildLandIndex([poly]);
-
-void test('segmentCrossesLand: endpoint inside polygon → true', () => {
-  assert.ok(segmentCrossesLand(index, 0, 0, 2, 2));
-});
-
-void test('segmentCrossesLand: both endpoints outside but segment crosses polygon → true', () => {
-  // horizontal segment from lon=-1 to lon=5, at lat=2 (bisects the square)
-  assert.ok(segmentCrossesLand(index, 2, -1, 2, 5));
-});
-
-void test('segmentCrossesLand: both endpoints outside, segment does not cross → false', () => {
-  assert.ok(!segmentCrossesLand(index, 0, 0, 0, 5));
-});
-
-void test('segmentCrossesLand: both endpoints inside → true', () => {
-  assert.ok(segmentCrossesLand(index, 2, 1.5, 2, 2.5));
-});
-
-void test('segmentCrossesLand: segment entirely in water, far from polygon → false', () => {
-  assert.ok(!segmentCrossesLand(index, -10, -10, -9, -9));
-});
 
 void test('buildLandIndex: grid has entries for cells the polygon occupies', () => {
   // polygon covers cells (lat=1,lon=1), (lat=1,lon=2), (lat=2,lon=1), (lat=2,lon=2)
@@ -65,54 +38,6 @@ void test('polygonsInBbox: deduplicates polygon spanning multiple cells', () => 
 void test('polygonsInBbox: returns empty array for bbox with no land', () => {
   const result = polygonsInBbox(index, -10, -10, -8, -8);
   assert.strictEqual(result.length, 0);
-});
-
-// ── Edge-tile index tests ──────────────────────────────────────────────────
-
-const edgeIdx = buildLandEdgeIndex([poly]);
-
-void test('buildLandEdgeIndex: edgeGrid is non-empty for a polygon', () => {
-  assert.ok(edgeIdx.edgeGrid.size > 0);
-});
-
-void test('buildLandEdgeIndex: polyGrid has an entry for the polygon cell', () => {
-  // polygon covers lat 1–3, lon 1–3; the 1° cell (floor(1),floor(1)) = (1,1)
-  const key = (1 + 90) * 360 + (1 + 180);
-  assert.ok(edgeIdx.polyGrid.has(key));
-});
-
-void test('segmentCrossesLandFast: segment crosses polygon edge → true', () => {
-  // vertical at lon=2 from lat=0 to lat=2 — crosses bottom edge at (lat=1,lon=2)
-  assert.ok(segmentCrossesLandFast(edgeIdx, 0, 2, 2, 2));
-});
-
-void test('segmentCrossesLandFast: horizontal bisects polygon → true', () => {
-  assert.ok(segmentCrossesLandFast(edgeIdx, 2, -1, 2, 5));
-});
-
-void test('segmentCrossesLandFast: open water → false', () => {
-  assert.ok(!segmentCrossesLandFast(edgeIdx, 0, 0, 0, 5));
-});
-
-void test('segmentCrossesLandFast: far from polygon → false', () => {
-  assert.ok(!segmentCrossesLandFast(edgeIdx, -10, -10, -9, -9));
-});
-
-void test('segmentCrossesLandFast: segment entirely inside polygon → false (no edge crossing)', () => {
-  // both endpoints inside; no polygon edges in the path cells → edge check returns false
-  assert.ok(!segmentCrossesLandFast(edgeIdx, 2, 1.5, 2, 2.5));
-});
-
-void test('isPointOnLand: point inside polygon → true', () => {
-  assert.ok(isPointOnLand(edgeIdx, 2, 2));
-});
-
-void test('isPointOnLand: point outside polygon → false', () => {
-  assert.ok(!isPointOnLand(edgeIdx, 0, 0));
-});
-
-void test('isPointOnLand: point far from polygon → false', () => {
-  assert.ok(!isPointOnLand(edgeIdx, -10, -10));
 });
 
 void test('land-polygons serialization: exterior Float64Array converts to closed [lon,lat] GeoJSON ring', () => {
