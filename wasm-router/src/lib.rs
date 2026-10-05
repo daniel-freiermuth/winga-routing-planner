@@ -8,11 +8,13 @@
 mod geo;
 mod isochrone;
 mod land;
+mod options;
 mod polar;
 mod weather;
 
 use isochrone::{LegConfig, LegState, RoutePoint, StepResult};
 use land::LandIndex;
+use options::RoutingOptions;
 use polar::PolarData;
 use wasm_bindgen::prelude::*;
 use weather::WeatherStore;
@@ -67,7 +69,8 @@ impl RouterSession {
     /// - `legs`: flat `[lat0, lon0, lat1, lon1, ..., latN, lonN]`
     /// - `departure_ms`: departure timestamp
     /// - `forecast_end_ms`: end of forecast coverage (from minifest)
-    /// - `options`: flat config array (same layout as before)
+    /// - `options`: `RoutingOptions` object with named fields; missing, unknown,
+    ///   non-finite, out-of-range or unsupported values are rejected
     /// - `land_index`: raw binary land-edge-index buffer (LNDX or DLND, version 2)
     #[wasm_bindgen(constructor)]
     pub fn new(
@@ -77,26 +80,15 @@ impl RouterSession {
         legs: &[f64],
         departure_ms: f64,
         forecast_end_ms: f64,
-        options: &[f64],
+        options: JsValue,
         land_index: &[u8],
     ) -> Result<RouterSession, JsValue> {
         let polar = PolarData::from_flat(polar_twa, polar_tws, polar_speeds);
 
-        let config = LegConfig {
-            heading_step: options.first().copied().unwrap_or(5.0),
-            sector_size: options.get(1).copied().unwrap_or(1.0),
-            min_boat_speed: options.get(2).copied().unwrap_or(0.3),
-            max_wind_kn: options.get(3).copied().unwrap_or(0.0),
-            motor_speed_kn: options.get(5).copied().unwrap_or(0.0),
-            motor_below_kn: options.get(6).copied().unwrap_or(0.0),
-            wait_for_wind: options.get(7).copied().unwrap_or(0.0) > 0.5,
-            tack_penalty_sec: options.get(8).copied().unwrap_or(30.0),
-            tack_threshold_deg: options.get(9).copied().unwrap_or(60.0),
-            cone_half_angle: options.get(10).copied().unwrap_or(100.0),
-            cone_disable_lookahead_nm: options.get(11).copied().unwrap_or(100.0),
-            max_heading_change: options.get(12).copied().unwrap_or(120.0),
-            arrival_radius_nm: options.get(13).copied().unwrap_or(0.0),
-        };
+        let options: RoutingOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| JsValue::from_str(&format!("Invalid routing options: {e}")))?;
+        let config = LegConfig::try_from(options)
+            .map_err(|e| JsValue::from_str(&format!("Invalid routing options: {e}")))?;
 
         let land = LandIndex::from_binary(land_index).map_err(|e| JsValue::from_str(&e))?;
 

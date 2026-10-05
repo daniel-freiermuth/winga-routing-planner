@@ -134,6 +134,28 @@ export interface RoutePoint {
   wowDir?: number | undefined; // wind-over-water direction (degrees, meteorological FROM)
 }
 
+/** User-chosen routing constraints. A limit of 0 means "no limit". */
+export interface RoutingPreferences {
+  maxWindKn: number;
+  maxWaveM: number; // the router rejects any value other than 0 until wave data reaches it
+  motorSpeedKn: number; // 0 = no motoring
+  motorBelowKn: number; // motor when sailing speed drops below this; 0 = never
+  waitForWind: boolean;
+  tackPenaltySec: number;
+  tackThresholdDeg: number;
+}
+
+/** Full router configuration passed to the WASM RouterSession; field names match the Rust side. */
+export interface RoutingOptions extends RoutingPreferences {
+  headingStep: number;
+  sectorSize: number;
+  minBoatSpeed: number;
+  coneHalfAngle: number;
+  coneDisableLookaheadNm: number;
+  maxHeadingChange: number;
+  arrivalRadiusNm: number; // 0 = derived from step distance
+}
+
 export interface CalculationRequest {
   start: LatLon;
   end: LatLon;
@@ -143,5 +165,5 @@ export interface CalculationRequest {
   useLandAvoidance?: boolean;
   enabledGribPaths?: string[]; // if absent, all files are used
   avoidRegionIds?: string[];
-  options?: Record<string, unknown>; // per-algorithm tuning
+  options: RoutingPreferences;
 }
