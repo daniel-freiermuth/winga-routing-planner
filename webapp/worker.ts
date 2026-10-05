@@ -13,7 +13,7 @@
 import { TileWindProvider, TileCurrentProvider } from '../src/lib/tile-provider';
 import { parsePolarCsv } from '../src/lib/polar';
 import { windSpeedKnots, windDirection } from '../src/lib/geo';
-import type { BoundingBox, CalculationRequest, RoutePoint } from '../src/types';
+import type { BoundingBox, CalculationRequest, RoutePoint, RoutingOptions, RoutingPreferences } from '../src/types';
 
 // ── Message types ─────────────────────────────────────────────────────────────
 
@@ -71,6 +71,18 @@ _self['js_on_progress'] = (pct: number, frontier: Float64Array): void => {
   post({ type: 'progress', pct, frontier: pairs });
 };
 
+// ── Algorithm tuning (not user-configurable) ──────────────────────────────────
+
+const ALGORITHM_TUNING: Omit<RoutingOptions, keyof RoutingPreferences> = {
+  headingStep: 5,
+  sectorSize: 1,
+  minBoatSpeed: 0.3,
+  coneHalfAngle: 100,
+  coneDisableLookaheadNm: 100,
+  maxHeadingChange: 120,
+  arrivalRadiusNm: 0,
+};
+
 // ── WASM loading ──────────────────────────────────────────────────────────────
 
 interface WasmModule {
@@ -81,7 +93,7 @@ interface WasmModule {
     legs: Float64Array,
     departure_ms: number,
     forecast_end_ms: number,
-    options: Float64Array,
+    options: RoutingOptions,
     land_index: Uint8Array,
   ) => WasmRouterSession;
 }
@@ -311,24 +323,7 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
     /* eslint-enable @typescript-eslint/no-non-null-assertion */
   }
 
-  const opts = request.options ?? {};
-  const options = new Float64Array([
-    Number(opts['headingStep'] ?? 5),
-    Number(opts['sectorSize'] ?? 1),
-    Number(opts['minBoatSpeed'] ?? 0.3),
-    Number(opts['maxWindKn'] ?? 0),
-    Number(opts['maxWaveM'] ?? 0),
-    Number(opts['motorSpeedKn'] ?? 0),
-    Number(opts['motorBelowKn'] ?? 0),
-    // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions -- options value is loosely typed
-    opts['waitForWind'] ? 1 : 0,
-    Number(opts['tackPenaltySec'] ?? 30),
-    Number(opts['tackThresholdDeg'] ?? 60),
-    100, // coneHalfAngle
-    100, // coneDisableLookaheadNm
-    120, // maxHeadingChange
-    0, // arrivalRadiusNm (0 = dynamic)
-  ]);
+  const options: RoutingOptions = { ...request.options, ...ALGORITHM_TUNING };
 
   const session = new wasm.RouterSession(
     new Float64Array(polar.twa),
