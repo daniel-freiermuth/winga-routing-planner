@@ -154,7 +154,8 @@ impl LegState {
 
     /// Progress percentage (0–100).
     pub fn progress_pct(&self) -> f64 {
-        ((self.steps_completed as f64 + 1.0) / self.est_total_steps as f64 * 100.0).min(99.0)
+        ((f64::from(self.steps_completed) + 1.0) / f64::from(self.est_total_steps) * 100.0)
+            .min(99.0)
     }
 
     /// Current frontier as (lat, lon) pairs for progress display.
@@ -166,6 +167,10 @@ impl LegState {
     }
 
     /// Run one expansion step using the given data sources.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "hot-path expansion kept in one function to avoid per-candidate call overhead"
+    )]
     pub fn step(
         &mut self,
         polar: &PolarData,
@@ -398,7 +403,11 @@ impl LegState {
         for &idx in &candidates {
             let p = &self.arena[idx];
             let d = haversine_nm(p.lat, p.lon, end_lat, end_lon);
-            if d <= self.arrival_r && (best_arrival.is_none() || d < best_arrival.unwrap().1) {
+            if d <= self.arrival_r && best_arrival.is_none_or(|(_, best_d)| d < best_d) {
+                #[expect(
+                    clippy::expect_used,
+                    reason = "every candidate is pushed with Some(parent); a missing parent is a logic bug that must fail loudly"
+                )]
                 let parent = &self.arena[p.parent.expect("candidates always have a parent")];
                 if !land.segment_crosses_land(parent.lat, parent.lon, end_lat, end_lon) {
                     best_arrival = Some((idx, d));

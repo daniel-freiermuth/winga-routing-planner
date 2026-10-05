@@ -2,6 +2,7 @@
 // and point-on-land checks. Parses the binary land-edge-index format produced
 // by the TypeScript `buildEdgeIndex` pipeline and consumed by `landmask.ts`.
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 /// Resolution of the edge grid in degrees.
@@ -13,7 +14,7 @@ struct LandPolygon {
     bbox_lat_max: f64,
     bbox_lon_min: f64,
     bbox_lon_max: f64,
-    /// Interleaved [lon0, lat0, lon1, lat1, ...] — same layout as the TS Float64Array.
+    /// Interleaved `[lon0, lat0, lon1, lat1, ...]` — same layout as the TS `Float64Array`.
     exterior: Vec<f64>,
 }
 
@@ -24,7 +25,7 @@ struct LandPolygon {
 /// - `poly_grid` — 1° cells mapping to polygon indices for `is_on_land`.
 pub(crate) struct LandIndex {
     polygons: Vec<LandPolygon>,
-    /// 0.1° cell key → flat [poly_idx, edge_idx, ...] pairs.
+    /// 0.1° cell key → flat `[poly_idx, edge_idx, ...]` pairs.
     edge_grid: HashMap<u32, Vec<u32>>,
     /// 1° cell key → polygon indices.
     poly_grid: HashMap<u32, Vec<u32>>,
@@ -137,8 +138,8 @@ fn point_in_ring(lat: f64, lon: f64, ring: &[f64]) -> bool {
 
 // ── public API ───────────────────────────────────────────────────────────────
 
-const EDGE_INDEX_MAGIC: u32 = 0x4c4e4458; // 'LNDX'
-const DILATED_INDEX_MAGIC: u32 = 0x444c4e44; // 'DLND'
+const EDGE_INDEX_MAGIC: u32 = 0x4c4e_4458; // 'LNDX'
+const DILATED_INDEX_MAGIC: u32 = 0x444c_4e44; // 'DLND'
 const EDGE_INDEX_VERSION: u32 = 2;
 
 impl LandIndex {
@@ -297,19 +298,15 @@ impl LandIndex {
             f64::INFINITY
         };
 
-        let mut tm_lat = if s_lat > 0 {
-            ((lat_cell + 1) as f64 * d - lat1) / d_lat
-        } else if s_lat < 0 {
-            (lat_cell as f64 * d - lat1) / d_lat
-        } else {
-            f64::INFINITY
+        let mut tm_lat = match s_lat.cmp(&0) {
+            Ordering::Greater => (f64::from(lat_cell + 1) * d - lat1) / d_lat,
+            Ordering::Less => (f64::from(lat_cell) * d - lat1) / d_lat,
+            Ordering::Equal => f64::INFINITY,
         };
-        let mut tm_lon = if s_lon > 0 {
-            ((lon_cell + 1) as f64 * d - lon1) / d_lon
-        } else if s_lon < 0 {
-            (lon_cell as f64 * d - lon1) / d_lon
-        } else {
-            f64::INFINITY
+        let mut tm_lon = match s_lon.cmp(&0) {
+            Ordering::Greater => (f64::from(lon_cell + 1) * d - lon1) / d_lon,
+            Ordering::Less => (f64::from(lon_cell) * d - lon1) / d_lon,
+            Ordering::Equal => f64::INFINITY,
         };
 
         let max_cells =
@@ -361,9 +358,8 @@ impl LandIndex {
     /// point-in-ring test on each candidate's exterior ring.
     pub fn is_on_land(&self, lat: f64, lon: f64) -> bool {
         let key = poly_cell_key(lat, lon);
-        let candidates = match self.poly_grid.get(&key) {
-            Some(c) => c,
-            None => return false,
+        let Some(candidates) = self.poly_grid.get(&key) else {
+            return false;
         };
         for &pi in candidates {
             if let Some(poly) = self.polygons.get(pi as usize) {
