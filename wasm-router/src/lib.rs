@@ -24,6 +24,24 @@ extern "C" {
     fn js_on_progress(pct: f64, frontier: &[f64]); // flat [lat1, lon1, lat2, lon2, ...]
 }
 
+// ── Step outcome ─────────────────────────────────────────────────────────────
+
+/// Outcome of `RouterSession::step()`. Every variant except `Running` is terminal.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepStatus {
+    /// Frontier advanced (or a non-final leg arrived); call `step()` again.
+    Running = 0,
+    /// Every leg reached its destination; `route()` ends at the final destination.
+    Arrived = 1,
+    /// The frontier collapsed after some progress; `route()` stops short of the destination.
+    PartialNoProgress = 2,
+    /// The frontier collapsed before any route existed; `error()` explains why.
+    Blocked = 3,
+    /// The next step would exceed the forecast horizon; `route()` stops short of the destination.
+    ForecastExhausted = 4,
+}
+
 // ── RouterSession ────────────────────────────────────────────────────────────
 
 /// Step-based routing session. Create one per route calculation.
@@ -33,7 +51,7 @@ extern "C" {
 /// 2. Loop:
 ///    a. `needs()` → `[time_lo_ms, time_hi_ms]` (empty if done/error)
 ///    b. Push weather frames covering that bracket via `push_wind_frame` / `push_current_frame`
-///    c. `step()` → status code
+///    c. `step()` → `StepStatus`; stop on any status other than `Running`
 ///    d. Read `progress()` for display
 /// 3. `route()` → final route as flat array
 #[wasm_bindgen]
@@ -50,8 +68,8 @@ pub struct RouterSession {
     full_route: Vec<RoutePoint>,
     departure_ms: f64,
     forecast_end_ms: f64,
-    // Status
-    done: bool,
+    // Terminal step outcome; `None` while routing is still in progress.
+    outcome: Option<StepStatus>,
     error: Option<String>,
     // Cached progress
     last_pct: f64,
@@ -139,7 +157,7 @@ impl RouterSession {
             full_route: Vec::new(),
             departure_ms,
             forecast_end_ms,
-            done: false,
+            outcome: None,
             error: None,
             last_pct: 0.0,
             last_frontier: Vec::new(),
@@ -202,9 +220,9 @@ impl RouterSession {
     }
 
     /// Time bracket needed for the next step: `[current_time_ms, next_time_ms]`.
-    /// Returns an empty array if done or error.
+    /// Returns an empty array once a terminal outcome has been reached.
     pub fn needs(&self) -> js_sys::Float64Array {
-        if self.done || self.error.is_some() {
+        if self.outcome.is_some() {
             return js_sys::Float64Array::new_with_length(0);
         }
         if let Some(state) = &self.leg_state {
@@ -216,22 +234,16 @@ impl RouterSession {
         }
     }
 
-    /// Run one expansion step. Returns a status code:
-    /// - `0` = running (frontier advanced)
-    /// - `1` = arrived at destination (call `route()` to get results)
-    /// - `2` = no progress (frontier collapsed — blocked or no wind)
-    /// - `3` = forecast exhausted
-    pub fn step(&mut self) -> u32 {
-        if self.done {
-            return 1;
-        }
-        if self.error.is_some() {
-            return 2;
+    /// Run one expansion step. Once a terminal status has been returned,
+    /// further calls return the same status.
+    pub fn step(&mut self) -> StepStatus {
+        if let Some(outcome) = self.outcome {
+            return outcome;
         }
 
         let state = match self.leg_state.as_mut() {
             Some(s) => s,
-            None => return 2,
+            None => return StepStatus::Blocked,
         };
 
         let result = state.step(
@@ -242,7 +254,7 @@ impl RouterSession {
             &self.land,
         );
 
-        match result {
+        let outcome = match result {
             StepResult::Running => {
                 // Update cached progress
                 self.last_pct = state.progress_pct();
@@ -253,40 +265,35 @@ impl RouterSession {
                     .collect();
                 // Report progress via JS callback
                 js_on_progress(self.last_pct, &self.last_frontier);
-                0
+                return StepStatus::Running;
             }
             StepResult::Arrived => {
                 self.finish_leg();
-                if self.current_leg >= self.legs.len() {
-                    // All legs done
-                    self.done = true;
-                    1
-                } else {
+                if self.current_leg < self.legs.len() {
                     // More legs — still running
-                    0
+                    return StepStatus::Running;
                 }
+                StepStatus::Arrived
             }
             StepResult::NoProgress => {
-                // Try to use partial route
                 self.finish_leg();
-                self.done = true;
                 if self.full_route.is_empty() {
                     self.error = Some(format!(
                         "No reachable positions on leg {}",
                         self.current_leg
                     ));
-                    2
+                    StepStatus::Blocked
                 } else {
-                    // Partial route available
-                    1
+                    StepStatus::PartialNoProgress
                 }
             }
             StepResult::ForecastExhausted => {
                 self.finish_leg();
-                self.done = true;
-                3
+                StepStatus::ForecastExhausted
             }
-        }
+        };
+        self.outcome = Some(outcome);
+        outcome
     }
 
     /// Progress info: `[pct, lat0, lon0, lat1, lon1, ...]`.
@@ -375,5 +382,94 @@ impl RouterSession {
                 ));
             }
         }
+    }
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LAND_INDEX_MAGIC_LNDX: u32 = 0x4c4e4458;
+    const LAND_INDEX_VERSION: u32 = 2;
+    const HOUR_MS: f64 = 3_600_000.0;
+    const FORECAST_HOURS: f64 = 48.0;
+    const WIND_V_MS: f32 = 5.0;
+
+    // Waypoints along the equator. `session()` puts wind at `WINDY_LON` and a flat
+    // calm at `CALM_LON`, so a leg starting at `CALM_LON` cannot make way.
+    const WINDY_LON: f64 = 0.0;
+    const CALM_LON: f64 = 0.03;
+    const FAR_LON: f64 = 1.0;
+
+    /// Land index with no polygons: open water everywhere.
+    fn empty_land_binary() -> Vec<u8> {
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&LAND_INDEX_MAGIC_LNDX.to_le_bytes());
+        buf.extend_from_slice(&LAND_INDEX_VERSION.to_le_bytes());
+        buf.extend_from_slice(&[0u8; 24]); // reserved, zero polygon/edge/poly counts, padding
+        buf
+    }
+
+    /// Session over the given `[lat, lon, ...]` waypoints with a 10 kn beam-reach polar
+    /// and one wind frame: 5 m/s southerly for lon ≤ 0.01, flat calm for lon ≥ 0.02.
+    fn session(waypoints: &[f64]) -> RouterSession {
+        let options = [
+            5.0, 1.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 30.0, 60.0, 100.0, 100.0, 120.0, 0.0,
+        ];
+        let mut session = RouterSession::new(
+            &[0.0, 90.0, 180.0],
+            &[5.0, 10.0, 20.0],
+            &[0.0, 0.0, 0.0, 10.0, 10.0, 10.0, 8.0, 8.0, 8.0],
+            waypoints,
+            0.0,
+            FORECAST_HOURS * HOUR_MS,
+            &options,
+            &empty_land_binary(),
+        )
+        .unwrap_or_else(|_| panic!("session construction failed"));
+
+        // Grid lon nodes: -0.01, 0.00, 0.01, 0.02, 0.03, 0.04; lat nodes: -0.01, 0.01.
+        let row = [WIND_V_MS, WIND_V_MS, WIND_V_MS, 0.0, 0.0, 0.0];
+        let v: Vec<f32> = row.iter().chain(row.iter()).copied().collect();
+        let u = vec![0.0f32; v.len()];
+        session.push_wind_frame(0.0, &u, &v, -0.01, -0.01, 0.02, 0.01, 2, 6);
+        session
+    }
+
+    #[test]
+    fn single_leg_reaching_destination_reports_arrived() {
+        let mut s = session(&[0.0, WINDY_LON, 0.0, CALM_LON]);
+
+        assert_eq!(s.step(), StepStatus::Arrived);
+        let last = s.full_route.last().expect("route has points");
+        assert_eq!((last.lat, last.lon), (0.0, CALM_LON));
+        assert_eq!(s.error(), None);
+    }
+
+    #[test]
+    fn blocked_second_leg_reports_partial_route_not_arrived() {
+        let mut s = session(&[0.0, WINDY_LON, 0.0, CALM_LON, 0.0, FAR_LON]);
+
+        // First leg arrives; the session moves on to the second leg.
+        assert_eq!(s.step(), StepStatus::Running);
+        // Second leg starts in a calm and its frontier collapses immediately.
+        assert_eq!(s.step(), StepStatus::PartialNoProgress);
+        assert_eq!(s.error(), None);
+        let last = s.full_route.last().expect("partial route has points");
+        assert_eq!((last.lat, last.lon), (0.0, CALM_LON));
+        // The terminal status is sticky — it never turns into Arrived.
+        assert_eq!(s.step(), StepStatus::PartialNoProgress);
+    }
+
+    #[test]
+    fn first_leg_without_progress_reports_blocked_with_error() {
+        let mut s = session(&[0.0, CALM_LON, 0.0, FAR_LON]);
+
+        assert_eq!(s.step(), StepStatus::Blocked);
+        assert!(s.full_route.is_empty());
+        assert!(s.error().is_some());
+        assert_eq!(s.step(), StepStatus::Blocked);
     }
 }
