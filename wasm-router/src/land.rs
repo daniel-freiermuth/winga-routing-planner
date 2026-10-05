@@ -68,7 +68,7 @@ fn read_f64_le(buf: &[u8], off: usize) -> f64 {
     ])
 }
 
-/// Edge-grid cell key matching the TS `edgeCellKey`:
+/// Edge-grid cell key matching `_edge_cell_key` in scripts/prepare-land-data.py:
 /// `(latCell + 900) * 3600 + (((lonCell % 3600) + 3600) % 3600)`
 #[inline]
 fn edge_cell_key(lat_cell: i32, lon_cell: i32) -> u32 {
@@ -84,7 +84,7 @@ fn poly_cell_key(lat: f64, lon: f64) -> u32 {
     ((la + 90) as u32) * 360 + ((lo + 180) as u32)
 }
 
-/// Parametric segment-segment intersection matching the TS `segmentsIntersect`.
+/// Parametric segment-segment intersection (strict interior crossing; collinear → false).
 /// Arguments are (x=lon, y=lat) order.
 #[inline]
 fn segments_intersect(
@@ -112,7 +112,7 @@ fn segments_intersect(
     t > 0.0 && t < 1.0 && u > 0.0 && u < 1.0
 }
 
-/// Ray-cast point-in-ring test matching the TS `pointInRing`.
+/// Ray-cast (even-odd) point-in-ring test.
 /// Ring is interleaved [lon, lat, lon, lat, ...].
 #[inline]
 fn point_in_ring(lat: f64, lon: f64, ring: &[f64]) -> bool {
