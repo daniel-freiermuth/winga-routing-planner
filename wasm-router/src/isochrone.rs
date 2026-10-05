@@ -212,7 +212,7 @@ impl LegState {
                 continue;
             }
 
-            // Wave check skipped — wave data not yet passed to Rust
+            // No wave check: wave data is not passed to Rust, so options.rs rejects any wave limit
 
             // Cone check
             let dist_to_dest = haversine_nm(pt_lat, pt_lon, end_lat, end_lon);

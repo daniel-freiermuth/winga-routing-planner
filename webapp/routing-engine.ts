@@ -2,6 +2,7 @@
 
 import type * as maplibregl from 'maplibre-gl';
 import { sortByBearing, splitByAngularGap } from './utils';
+import type { RoutingPreferences } from '../src/types';
 
 export interface IsochroneState {
   sourceIds: string[];
@@ -18,15 +19,7 @@ interface RoutingRequest {
   polarCsv: string;
   useLandAvoidance: boolean;
   useSafetyMargin: boolean;
-  options: {
-    motorBelowKn?: number | undefined;
-    motorSpeedKn?: number | undefined;
-    waitForWind?: boolean | undefined;
-    maxWindKn?: number | undefined;
-    maxWaveM?: number | undefined;
-    tackPenaltySec?: number | undefined;
-    tackThresholdDeg?: number | undefined;
-  };
+  options: RoutingPreferences;
 }
 
 const ISOCHRONE_GAP_THRESHOLD_DEG = 10;

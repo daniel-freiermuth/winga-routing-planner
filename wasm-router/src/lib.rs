@@ -8,11 +8,13 @@
 mod geo;
 mod isochrone;
 mod land;
+mod options;
 mod polar;
 mod weather;
 
 use isochrone::{LegConfig, LegState, RoutePoint, StepResult};
 use land::LandIndex;
+use options::RoutingOptions;
 use polar::PolarData;
 use wasm_bindgen::prelude::*;
 use weather::WeatherStore;
@@ -67,7 +69,8 @@ impl RouterSession {
     /// - `legs`: flat `[lat0, lon0, lat1, lon1, ..., latN, lonN]`
     /// - `departure_ms`: departure timestamp
     /// - `forecast_end_ms`: end of forecast coverage (from minifest)
-    /// - `options`: flat config array (same layout as before)
+    /// - `options`: `RoutingOptions` object with named fields; missing,
+    ///   non-finite, out-of-range or unsupported values are rejected
     /// - `land_index`: raw binary land-edge-index buffer (LNDX or DLND, version 2)
     #[wasm_bindgen(constructor)]
     pub fn new(
@@ -77,11 +80,15 @@ impl RouterSession {
         legs: &[f64],
         departure_ms: f64,
         forecast_end_ms: f64,
-        options: &[f64],
+        options: JsValue,
         land_index: &[u8],
     ) -> Result<RouterSession, JsValue> {
         let polar = PolarData::from_flat(polar_twa, polar_tws, polar_speeds);
-        let config = leg_config_from_options(options).map_err(|e| JsValue::from_str(&e))?;
+
+        let options: RoutingOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| JsValue::from_str(&format!("Invalid routing options: {e}")))?;
+        let config = LegConfig::try_from(options)
+            .map_err(|e| JsValue::from_str(&format!("Invalid routing options: {e}")))?;
         let land = LandIndex::from_binary(land_index).map_err(|e| JsValue::from_str(&e))?;
 
         // Parse leg endpoints
@@ -359,64 +366,5 @@ impl RouterSession {
                 ));
             }
         }
-    }
-}
-
-/// Position of the max-wave limit (m, 0 = no limit) in the worker's options array.
-const MAX_WAVE_OPTION_INDEX: usize = 4;
-
-/// Build the leg configuration from the worker's flat options array.
-///
-/// Wave data never reaches the router, so a max-wave limit cannot be honoured;
-/// it is rejected instead of routing as if no limit had been set.
-fn leg_config_from_options(options: &[f64]) -> Result<LegConfig, String> {
-    let max_wave_m = options.get(MAX_WAVE_OPTION_INDEX).copied().unwrap_or(0.0);
-    if max_wave_m != 0.0 {
-        return Err(format!(
-            "Max wave limit ({max_wave_m} m) is not supported: wave data is not used for routing. \
-             Clear the Max wave setting to calculate a route."
-        ));
-    }
-    Ok(LegConfig {
-        heading_step: options.first().copied().unwrap_or(5.0),
-        sector_size: options.get(1).copied().unwrap_or(1.0),
-        min_boat_speed: options.get(2).copied().unwrap_or(0.3),
-        max_wind_kn: options.get(3).copied().unwrap_or(0.0),
-        motor_speed_kn: options.get(5).copied().unwrap_or(0.0),
-        motor_below_kn: options.get(6).copied().unwrap_or(0.0),
-        wait_for_wind: options.get(7).copied().unwrap_or(0.0) > 0.5,
-        tack_penalty_sec: options.get(8).copied().unwrap_or(30.0),
-        tack_threshold_deg: options.get(9).copied().unwrap_or(60.0),
-        cone_half_angle: options.get(10).copied().unwrap_or(100.0),
-        cone_disable_lookahead_nm: options.get(11).copied().unwrap_or(100.0),
-        max_heading_change: options.get(12).copied().unwrap_or(120.0),
-        arrival_radius_nm: options.get(13).copied().unwrap_or(0.0),
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn options_with_max_wave(max_wave_m: f64) -> Vec<f64> {
-        let mut options = vec![5.0, 1.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 30.0, 60.0];
-        options[MAX_WAVE_OPTION_INDEX] = max_wave_m;
-        options
-    }
-
-    #[test]
-    fn max_wave_limit_is_not_silently_ignored() {
-        let err = leg_config_from_options(&options_with_max_wave(1.0))
-            .err()
-            .expect("a max-wave limit must be rejected while no wave data reaches the router");
-        assert!(err.contains("Max wave"), "unexpected error: {err}");
-    }
-
-    #[test]
-    fn no_max_wave_limit_is_accepted() {
-        assert!(
-            leg_config_from_options(&options_with_max_wave(0.0)).is_ok(),
-            "0 means no wave limit and must route normally"
-        );
     }
 }
