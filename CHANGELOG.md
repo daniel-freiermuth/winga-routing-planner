@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Routing options reach the router as named, validated fields; a missing, non-finite or negative option now fails the calculation with an error instead of falling back to a default
+- A max wave height limit now fails the calculation with an error; previously it was silently ignored because wave data does not reach the router
+
 ## 0.1.0
 
 Initial release under the winga-weather-routing name.
