@@ -9,7 +9,7 @@ pages:
     - cargo install wasm-pack
     # pnpm
     - corepack enable
-    - corepack prepare pnpm@11 --activate
+    - corepack prepare pnpm@12 --activate
     - pnpm install --ignore-scripts
   script:
     - pnpm -C windy-lib/ts build
