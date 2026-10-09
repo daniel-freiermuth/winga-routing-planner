@@ -16,6 +16,9 @@ interface LatLon {
   lon: number;
 }
 
+// RoutingPreferences convention: 0 disables a limit or motoring.
+const DISABLED = 0;
+
 const C64_PALETTE = [
   '#6c7086',
   '#ffffff',
@@ -352,11 +355,11 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
         useLandAvoidance: opts?.useLandAvoidance ?? true,
         useSafetyMargin: opts?.useSafetyMargin ?? false,
         options: {
-          motorBelowKn: opts?.motorBelowKn,
-          motorSpeedKn: opts?.motorSpeedKn,
-          waitForWind: opts?.waitForWind,
-          maxWindKn: opts?.maxWindKn,
-          maxWaveM: opts?.maxWaveM,
+          maxWindKn: opts?.maxWindKn ?? DISABLED,
+          maxWaveM: opts?.maxWaveM ?? DISABLED,
+          motorSpeedKn: opts?.motorSpeedKn ?? DISABLED,
+          motorBelowKn: opts?.motorBelowKn ?? DISABLED,
+          waitForWind: opts?.waitForWind ?? false,
           tackPenaltySec: opts?.tackPenaltySec ?? 30,
           tackThresholdDeg: opts?.tackThresholdDeg ?? 60,
         },
