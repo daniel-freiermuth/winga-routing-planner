@@ -142,6 +142,16 @@ const DILATED_INDEX_MAGIC: u32 = 0x444c4e44; // 'DLND'
 const EDGE_INDEX_VERSION: u32 = 2;
 
 impl LandIndex {
+    /// Create an empty land index (open ocean, no land polygons).
+    #[cfg(test)]
+    pub fn empty() -> Self {
+        Self {
+            polygons: Vec::new(),
+            edge_grid: HashMap::new(),
+            poly_grid: HashMap::new(),
+        }
+    }
+
     /// Parse a `LandIndex` from the binary land-edge-index buffer.
     ///
     /// Accepts both LNDX (`0x4c4e4458`) and DLND (`0x444c4e44`) magic, version 2.
