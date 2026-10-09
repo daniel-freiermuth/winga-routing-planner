@@ -264,6 +264,17 @@ mod tests {
         );
     }
 
+    #[test]
+    fn bilinear_off_centre_unequal_fractions() {
+        // TWA=120 → frac 1/3 in 90..180; TWS=12 → frac 0.2 in 10..20.
+        // Corners [5,10,3,6]: top = 5·0.8 + 10·0.2 = 6, bot = 3·0.8 + 6·0.2 = 3.6,
+        // speed = 6·(2/3) + 3.6·(1/3) = 5.2. Midpoint fractions cannot catch
+        // swapped or non-linear weights; these unequal ones do.
+        let p = test_polar();
+        let spd = p.interpolate(120.0, 12.0);
+        assert!((spd - 5.2).abs() < 1e-9, "off-centre bilinear: got {spd}");
+    }
+
     // ── helper: bracket() ───────────────────────────────────────────────
 
     #[test]
@@ -311,17 +322,6 @@ mod tests {
         assert!((p.interpolate(90.0, 10.0) - 5.0).abs() < 1e-9);
         assert!((p.interpolate(90.0, 20.0) - 10.0).abs() < 1e-9);
         assert!((p.interpolate(180.0, 20.0) - 6.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn parity_bilinear_and_midpoints() {
-        // TypeScript: interpolateBoatSpeed(polar, 90, 15) → 7.5
-        //             interpolateBoatSpeed(polar, 135, 10) → 4
-        //             interpolateBoatSpeed(polar, 135, 15) → 6
-        let p = test_polar();
-        assert!((p.interpolate(90.0, 15.0) - 7.5).abs() < 1e-9);
-        assert!((p.interpolate(135.0, 10.0) - 4.0).abs() < 1e-9);
-        assert!((p.interpolate(135.0, 15.0) - 6.0).abs() < 1e-9);
     }
 
     #[test]
