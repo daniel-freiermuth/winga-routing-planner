@@ -9,6 +9,7 @@ import { fmt as _fmt, toDisplay as _toDisplay } from './units';
 import { drawRoute } from './route-display';
 import { buildConditionsGraph } from './conditions-graph';
 import { buildWorkerPayload, renderIsochrone, clearIsochrones } from './routing-engine';
+import { haversineNM, bearingTo, currentDirection } from '../src/lib/geo';
 import type { IsochroneState } from './routing-engine';
 
 interface LatLon {
@@ -444,24 +445,15 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
                   const cSpd = Math.sqrt(p.currentU * p.currentU + p.currentV * p.currentV) * 1.94384;
                   if (cSpd > 0.01) {
                     meta.currentSpeedKn = cSpd;
-                    meta.currentDir = ((Math.atan2(p.currentU, p.currentV) * 180) / Math.PI + 360) % 360;
+                    meta.currentDir = currentDirection(p.currentU, p.currentV);
                   }
                 }
                 // COG and SOG from consecutive positions (ground track)
                 if (i > 0) {
                   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                   const prev = j.route![i - 1]!;
-                  const dLat = ((p.lat - prev.lat) * Math.PI) / 180;
-                  const dLon = ((p.lon - prev.lon) * Math.PI) / 180;
-                  const lat1r = (prev.lat * Math.PI) / 180;
-                  const lat2r = (p.lat * Math.PI) / 180;
-                  // Haversine distance in NM
-                  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1r) * Math.cos(lat2r) * Math.sin(dLon / 2) ** 2;
-                  const distNM = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 3440.065;
-                  // Bearing
-                  const y = Math.sin(dLon) * Math.cos(lat2r);
-                  const x = Math.cos(lat1r) * Math.sin(lat2r) - Math.sin(lat1r) * Math.cos(lat2r) * Math.cos(dLon);
-                  meta.cogDeg = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+                  const distNM = haversineNM(prev.lat, prev.lon, p.lat, p.lon);
+                  meta.cogDeg = bearingTo(prev.lat, prev.lon, p.lat, p.lon);
                   // SOG in knots
                   const t0 = typeof prev.time === 'string' ? new Date(prev.time).getTime() : Number(prev.time);
                   const t1 = typeof p.time === 'string' ? new Date(p.time).getTime() : Number(p.time);
