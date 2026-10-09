@@ -10,6 +10,8 @@ import { drawRoute } from './route-display';
 import { buildConditionsGraph } from './conditions-graph';
 import { buildWorkerPayload, renderIsochrone, clearIsochrones } from './routing-engine';
 import type { IsochroneState } from './routing-engine';
+import { routePointsToRouteData, findScrubberPosition } from './route-meta';
+import type { WorkerRoutePoint } from './route-meta';
 
 interface LatLon {
   lat: number;
@@ -92,19 +94,6 @@ export interface CalculationApi {
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
-
-function findScrubberPosition(graphMeta: WaypointMeta[] | null, tMs: number) {
-  if (!graphMeta || graphMeta.length < 2) return { wpIdx: -1, legIdx: -1 };
-  for (let i = 0; i < graphMeta.length - 1; i++) {
-    const entry = graphMeta[i];
-    const nextEntry = graphMeta[i + 1];
-    if (entry === undefined || nextEntry === undefined) continue;
-    const t1 = new Date(entry.time).getTime();
-    const t2 = new Date(nextEntry.time).getTime();
-    if (tMs >= t1 && tMs <= t2) return { wpIdx: i, legIdx: i };
-  }
-  return { wpIdx: -1, legIdx: -1 };
-}
 
 function drawConditionsGraph(ctx: CalculationContext, meta: WaypointMeta[], intermediateIdxs: number[] = []) {
   const result = buildConditionsGraph({
@@ -377,25 +366,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
       legOrigin?: [number, number];
       clearIsochrones?: boolean;
       status?: string;
-      route?: {
-        lat: number;
-        lon: number;
-        time: string;
-        ctw: number;
-        twa: number;
-        tws: number;
-        boatSpeed?: number;
-        windDir: number;
-        waveHeight?: number;
-        gribFilePath?: string;
-        gustKn?: number;
-        currentU?: number;
-        currentV?: number;
-        wavePeriod?: number;
-        waveDir?: number;
-        wowTws?: number;
-        wowDir?: number;
-      }[];
+      route?: WorkerRoutePoint[];
       warning?: string;
       error?: string;
     };
@@ -414,66 +385,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
       ctx.setShowProgress(false);
       ctx.setCalculating(false);
       if (j.route && j.route.length >= 2) {
-        // Convert RoutePoint[] to GeoJSON RouteData
-        const routeData: RouteData = {
-          feature: {
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: j.route.map((p) => [p.lon, p.lat]),
-            },
-            properties: {
-              coordinatesMeta: j.route.map((p, i) => {
-                const meta: WaypointMeta = {
-                  name: '',
-                  time: typeof p.time === 'string' ? p.time : new Date(p.time).toISOString(),
-                  windDir: p.windDir,
-                  ctw: p.ctw,
-                  twa: p.twa,
-                  tws: p.tws,
-                };
-                if (p.boatSpeed != null) meta.boatSpeed = p.boatSpeed;
-                if (p.waveHeight != null) meta.waveHeight = p.waveHeight;
-                if (p.gribFilePath != null) meta.gribFile = p.gribFilePath;
-                if (p.gustKn != null) meta.gustKn = p.gustKn;
-                if (p.wavePeriod != null) meta.wavePeriod = p.wavePeriod;
-                if (p.waveDir != null) meta.waveDir = p.waveDir;
-                if (p.wowTws != null) meta.wowTws = p.wowTws;
-                if (p.wowDir != null) meta.wowDir = p.wowDir;
-                if (p.currentU != null && p.currentV != null) {
-                  const cSpd = Math.sqrt(p.currentU * p.currentU + p.currentV * p.currentV) * 1.94384;
-                  if (cSpd > 0.01) {
-                    meta.currentSpeedKn = cSpd;
-                    meta.currentDir = ((Math.atan2(p.currentU, p.currentV) * 180) / Math.PI + 360) % 360;
-                  }
-                }
-                // COG and SOG from consecutive positions (ground track)
-                if (i > 0) {
-                  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                  const prev = j.route![i - 1]!;
-                  const dLat = ((p.lat - prev.lat) * Math.PI) / 180;
-                  const dLon = ((p.lon - prev.lon) * Math.PI) / 180;
-                  const lat1r = (prev.lat * Math.PI) / 180;
-                  const lat2r = (p.lat * Math.PI) / 180;
-                  // Haversine distance in NM
-                  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1r) * Math.cos(lat2r) * Math.sin(dLon / 2) ** 2;
-                  const distNM = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 3440.065;
-                  // Bearing
-                  const y = Math.sin(dLon) * Math.cos(lat2r);
-                  const x = Math.cos(lat1r) * Math.sin(lat2r) - Math.sin(lat1r) * Math.cos(lat2r) * Math.cos(dLon);
-                  meta.cogDeg = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-                  // SOG in knots
-                  const t0 = typeof prev.time === 'string' ? new Date(prev.time).getTime() : Number(prev.time);
-                  const t1 = typeof p.time === 'string' ? new Date(p.time).getTime() : Number(p.time);
-                  const dtH = (t1 - t0) / 3600000;
-                  meta.sogKn = dtH > 0 ? distNM / dtH : 0;
-                }
-                return meta;
-              }),
-            },
-          },
-        };
-        calcState.pendingRouteData = routeData;
+        calcState.pendingRouteData = routePointsToRouteData(j.route);
         ctx.setStatus('done', 'Route calculated');
         fetchAndDrawRoute();
       } else if (j.error !== undefined && j.error !== '') {
