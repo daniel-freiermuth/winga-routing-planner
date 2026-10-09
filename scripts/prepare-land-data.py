@@ -139,7 +139,7 @@ def load_polygons(zip_path, resolution):
 
 
 # ---------------------------------------------------------------------------
-# Edge index building (port of buildLandEdgeIndex from src/lib/landmask.ts)
+# Edge index building (cell key formulas must match wasm-router/src/land.rs)
 # ---------------------------------------------------------------------------
 
 def _edge_cell_key(lat_cell, lon_cell):
