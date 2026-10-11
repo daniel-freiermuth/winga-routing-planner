@@ -377,3 +377,43 @@ impl RouterSession {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MAX_WAVE_OPTION_INDEX: usize = 4;
+
+    /// Header-only land index (LNDX v2) with zero polygons and grid cells.
+    fn empty_land_binary() -> Vec<u8> {
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&0x4c4e4458u32.to_le_bytes()); // 'LNDX'
+        buf.extend_from_slice(&2u32.to_le_bytes()); // version
+        buf.extend_from_slice(&[0u8; 24]); // reserved, zero counts, padding
+        buf
+    }
+
+    fn options_with_max_wave(max_wave_m: f64) -> Vec<f64> {
+        let mut options = vec![5.0, 1.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 30.0, 60.0];
+        options[MAX_WAVE_OPTION_INDEX] = max_wave_m;
+        options
+    }
+
+    #[test]
+    fn max_wave_limit_is_not_silently_ignored() {
+        let session = RouterSession::new(
+            &[90.0],
+            &[10.0],
+            &[5.0],
+            &[0.0, 0.0, 0.0, 1.0],
+            0.0,
+            3_600_000.0,
+            &options_with_max_wave(1.0),
+            &empty_land_binary(),
+        );
+        assert!(
+            session.is_err(),
+            "a max-wave limit must be rejected while no wave data reaches the router"
+        );
+    }
+}
