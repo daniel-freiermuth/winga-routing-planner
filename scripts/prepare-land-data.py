@@ -28,11 +28,17 @@ import zipfile
 import urllib.request
 
 import fiona
-from shapely.geometry import shape, Polygon as ShapelyPolygon
+from shapely import affinity
+from shapely.geometry import box, shape, Polygon as ShapelyPolygon
 from shapely.ops import unary_union
 import numpy as np
 
 DILATION_RADIUS_NM = 0.5
+NM_PER_DEG_LAT     = 60.0
+# Polygons are split into latitude bands of this height before buffering, and each
+# band is buffered with the longitude scale of its poleward edge. The E-W margin is
+# therefore never below DILATION_RADIUS_NM and exceeds it by at most ~1 % up to 80°.
+DILATION_BAND_DEG  = 0.1
 
 GSHHG_VERSION  = '2.3.7'
 GSHHG_FILENAME = f'gshhg-shp-{GSHHG_VERSION}.zip'
@@ -292,8 +298,30 @@ def _flatten_geometry(geom, out):
             _flatten_geometry(g, out)
 
 
+def _buffer_at_latitude(geom, radius_deg, scale_lat):
+    """Buffer by radius_deg of latitude, widened in longitude by 1/cos(scale_lat) so the
+    margin is the same distance east-west as north-south."""
+    k = math.cos(math.radians(scale_lat))
+    local = affinity.scale(geom, xfact=k, yfact=1.0, origin=(0, 0))
+    return affinity.scale(local.buffer(radius_deg), xfact=1.0 / k, yfact=1.0, origin=(0, 0))
+
+
+def _buffer_by_latitude_band(geom, radius_deg):
+    lon_min, lat_min, lon_max, lat_max = geom.bounds
+    first_band = math.floor(lat_min / DILATION_BAND_DEG)
+    last_band  = math.floor(lat_max / DILATION_BAND_DEG)
+    parts = []
+    for band in range(first_band, last_band + 1):
+        lo = max(lat_min, band * DILATION_BAND_DEG)
+        hi = min(lat_max, (band + 1) * DILATION_BAND_DEG)
+        piece = geom if first_band == last_band else geom.intersection(box(lon_min, lo, lon_max, hi))
+        if not piece.is_empty:
+            parts.append(_buffer_at_latitude(piece, radius_deg, max(abs(lo), abs(hi))))
+    return parts
+
+
 def dilate_polygons(polygons):
-    radius_deg = DILATION_RADIUS_NM / 60.0
+    radius_deg = DILATION_RADIUS_NM / NM_PER_DEG_LAT
     log(f'\n[5/5] Dilating {len(polygons):,} polygons by {DILATION_RADIUS_NM} NM ({radius_deg:.6f}°)...')
 
     buffered = []
@@ -305,9 +333,7 @@ def dilate_polygons(polygons):
         pairs  = list(zip(coords[0::2], coords[1::2]))
         geom   = ShapelyPolygon(pairs)
         if geom.is_valid and not geom.is_empty:
-            b = geom.buffer(radius_deg)
-            if not b.is_empty:
-                buffered.append(b)
+            buffered.extend(_buffer_by_latitude_band(geom, radius_deg))
 
         pct = (i + 1) * 100 // total
         if pct != last_pct:
