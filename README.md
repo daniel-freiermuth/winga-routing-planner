@@ -79,7 +79,8 @@ In the Settings gear icon:
 - **Safety margin** — dilates coastline by 0.5 NM
 - **Motor** — threshold wind speed and motor speed for light-wind legs
 - **Wait for wind** — hold position through calm patches instead of giving up
-- **Max wind / max wave** — reject routes through areas exceeding limits
+- **Max wind** — reject routes through areas exceeding the limit
+- **Max wave** — not yet supported by the router; setting a value stops the calculation with an error (leave empty)
 - **Tack/gybe penalty** — seconds lost per tack (default 30 s when heading changes > 60 deg)
 
 ### Map interactions

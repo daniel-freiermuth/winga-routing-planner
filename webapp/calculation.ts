@@ -336,6 +336,12 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
 
     calcState.pendingRouteData = null;
     const opts = ctx.getRoutingOptions()?.getOptions();
+    // The router has no wave data, so a wave limit cannot be honoured (Nautical Safety Rule).
+    if (opts?.maxWaveM !== undefined) {
+      ctx.setStatus('error', 'Max wave limit is not supported yet — clear the Max wave setting to calculate a route');
+      ctx.setCalculating(false);
+      return;
+    }
 
     // Unwrap Svelte $state proxies — structured cloning (postMessage) can't handle Proxy objects
     const plainStart = { lat: startLatLon.lat, lon: startLatLon.lon };

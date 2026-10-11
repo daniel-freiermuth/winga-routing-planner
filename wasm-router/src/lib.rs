@@ -81,23 +81,7 @@ impl RouterSession {
         land_index: &[u8],
     ) -> Result<RouterSession, JsValue> {
         let polar = PolarData::from_flat(polar_twa, polar_tws, polar_speeds);
-
-        let config = LegConfig {
-            heading_step: options.first().copied().unwrap_or(5.0),
-            sector_size: options.get(1).copied().unwrap_or(1.0),
-            min_boat_speed: options.get(2).copied().unwrap_or(0.3),
-            max_wind_kn: options.get(3).copied().unwrap_or(0.0),
-            motor_speed_kn: options.get(5).copied().unwrap_or(0.0),
-            motor_below_kn: options.get(6).copied().unwrap_or(0.0),
-            wait_for_wind: options.get(7).copied().unwrap_or(0.0) > 0.5,
-            tack_penalty_sec: options.get(8).copied().unwrap_or(30.0),
-            tack_threshold_deg: options.get(9).copied().unwrap_or(60.0),
-            cone_half_angle: options.get(10).copied().unwrap_or(100.0),
-            cone_disable_lookahead_nm: options.get(11).copied().unwrap_or(100.0),
-            max_heading_change: options.get(12).copied().unwrap_or(120.0),
-            arrival_radius_nm: options.get(13).copied().unwrap_or(0.0),
-        };
-
+        let config = leg_config_from_options(options).map_err(|e| JsValue::from_str(&e))?;
         let land = LandIndex::from_binary(land_index).map_err(|e| JsValue::from_str(&e))?;
 
         // Parse leg endpoints
@@ -378,20 +362,41 @@ impl RouterSession {
     }
 }
 
+/// Position of the max-wave limit (m, 0 = no limit) in the worker's options array.
+const MAX_WAVE_OPTION_INDEX: usize = 4;
+
+/// Build the leg configuration from the worker's flat options array.
+///
+/// Wave data never reaches the router, so a max-wave limit cannot be honoured;
+/// it is rejected instead of routing as if no limit had been set.
+fn leg_config_from_options(options: &[f64]) -> Result<LegConfig, String> {
+    let max_wave_m = options.get(MAX_WAVE_OPTION_INDEX).copied().unwrap_or(0.0);
+    if max_wave_m != 0.0 {
+        return Err(format!(
+            "Max wave limit ({max_wave_m} m) is not supported: wave data is not used for routing. \
+             Clear the Max wave setting to calculate a route."
+        ));
+    }
+    Ok(LegConfig {
+        heading_step: options.first().copied().unwrap_or(5.0),
+        sector_size: options.get(1).copied().unwrap_or(1.0),
+        min_boat_speed: options.get(2).copied().unwrap_or(0.3),
+        max_wind_kn: options.get(3).copied().unwrap_or(0.0),
+        motor_speed_kn: options.get(5).copied().unwrap_or(0.0),
+        motor_below_kn: options.get(6).copied().unwrap_or(0.0),
+        wait_for_wind: options.get(7).copied().unwrap_or(0.0) > 0.5,
+        tack_penalty_sec: options.get(8).copied().unwrap_or(30.0),
+        tack_threshold_deg: options.get(9).copied().unwrap_or(60.0),
+        cone_half_angle: options.get(10).copied().unwrap_or(100.0),
+        cone_disable_lookahead_nm: options.get(11).copied().unwrap_or(100.0),
+        max_heading_change: options.get(12).copied().unwrap_or(120.0),
+        arrival_radius_nm: options.get(13).copied().unwrap_or(0.0),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const MAX_WAVE_OPTION_INDEX: usize = 4;
-
-    /// Header-only land index (LNDX v2) with zero polygons and grid cells.
-    fn empty_land_binary() -> Vec<u8> {
-        let mut buf = Vec::with_capacity(32);
-        buf.extend_from_slice(&0x4c4e4458u32.to_le_bytes()); // 'LNDX'
-        buf.extend_from_slice(&2u32.to_le_bytes()); // version
-        buf.extend_from_slice(&[0u8; 24]); // reserved, zero counts, padding
-        buf
-    }
 
     fn options_with_max_wave(max_wave_m: f64) -> Vec<f64> {
         let mut options = vec![5.0, 1.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 30.0, 60.0];
@@ -401,19 +406,17 @@ mod tests {
 
     #[test]
     fn max_wave_limit_is_not_silently_ignored() {
-        let session = RouterSession::new(
-            &[90.0],
-            &[10.0],
-            &[5.0],
-            &[0.0, 0.0, 0.0, 1.0],
-            0.0,
-            3_600_000.0,
-            &options_with_max_wave(1.0),
-            &empty_land_binary(),
-        );
+        let err = leg_config_from_options(&options_with_max_wave(1.0))
+            .err()
+            .expect("a max-wave limit must be rejected while no wave data reaches the router");
+        assert!(err.contains("Max wave"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn no_max_wave_limit_is_accepted() {
         assert!(
-            session.is_err(),
-            "a max-wave limit must be rejected while no wave data reaches the router"
+            leg_config_from_options(&options_with_max_wave(0.0)).is_ok(),
+            "0 means no wave limit and must route normally"
         );
     }
 }
