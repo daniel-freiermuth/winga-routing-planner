@@ -419,4 +419,54 @@ mod tests {
             "0 means no wave limit and must route normally"
         );
     }
+
+    const STATUS_ARRIVED: u32 = 1;
+    const STATUS_NO_PROGRESS: u32 = 2;
+
+    /// A valid land index header with no polygons: open water everywhere.
+    fn empty_land_index() -> Vec<u8> {
+        let mut buf = vec![0u8; 32];
+        buf[0..4].copy_from_slice(&0x4c4e4458u32.to_le_bytes()); // 'LNDX'
+        buf[4..8].copy_from_slice(&2u32.to_le_bytes());
+        buf
+    }
+
+    #[test]
+    fn later_leg_with_no_reachable_positions_is_an_error_not_an_arrival() {
+        const HOUR_MS: f64 = 3_600_000.0;
+        let departure_ms = 0.0;
+        // Waypoint (lat 0.03) lies 2.4 nm north of the start, reachable in one
+        // step at 12 kn; the wind grid ends at lat 0, so leg 2 starts in calm.
+        let legs = [-0.01, -0.05, 0.03, -0.05, 0.06, -0.05];
+        let options = options_with_max_wave(0.0); // wait_for_wind off
+        let mut session = RouterSession::new(
+            &[0.0, 180.0],
+            &[5.0, 30.0],
+            &[12.0, 12.0, 12.0, 12.0],
+            &legs,
+            departure_ms,
+            departure_ms + 48.0 * HOUR_MS,
+            &options,
+            &empty_land_index(),
+        )
+        .unwrap_or_else(|_| panic!("session construction failed"));
+        let westerly = [10.0f32; 4];
+        let calm = [0.0f32; 4];
+        session.push_wind_frame(departure_ms, &westerly, &calm, -0.1, -0.1, 0.1, 0.1, 2, 2);
+
+        assert_eq!(session.step(), 0, "leg 1 should arrive and hand over to leg 2");
+        assert_eq!(session.current_leg, 1);
+
+        let status = session.step();
+        assert_ne!(
+            status, STATUS_ARRIVED,
+            "route ending at waypoint 1 reported as arrived: {:?}",
+            session.full_route.last().map(|p| (p.lat, p.lon))
+        );
+        assert_eq!(status, STATUS_NO_PROGRESS);
+        assert_eq!(
+            session.error(),
+            Some("No reachable positions on leg 2".to_string())
+        );
+    }
 }
