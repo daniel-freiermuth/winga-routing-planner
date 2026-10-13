@@ -368,3 +368,105 @@ impl RouterSession {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const STATUS_ARRIVED: u32 = 1;
+    const STATUS_NO_PROGRESS: u32 = 2;
+    const HOUR_MS: f64 = 3_600_000.0;
+
+    /// A valid land index header with no polygons: open water everywhere.
+    fn empty_land_index() -> Vec<u8> {
+        let mut buf = vec![0u8; 32];
+        buf[0..4].copy_from_slice(&0x4c4e4458u32.to_le_bytes()); // 'LNDX'
+        buf[4..8].copy_from_slice(&2u32.to_le_bytes());
+        buf
+    }
+
+    fn calm_stops_options() -> RoutingOptions {
+        RoutingOptions {
+            heading_step: 5.0,
+            sector_size: 1.0,
+            min_boat_speed: 0.3,
+            max_wind_kn: 0.0,
+            max_wave_m: 0.0,
+            motor_speed_kn: 0.0,
+            motor_below_kn: 0.0,
+            wait_for_wind: false,
+            tack_penalty_sec: 30.0,
+            tack_threshold_deg: 60.0,
+            cone_half_angle: 100.0,
+            cone_disable_lookahead_nm: 100.0,
+            max_heading_change: 120.0,
+            arrival_radius_nm: 0.0,
+        }
+    }
+
+    /// Builds a session the way `new` does, minus the `JsValue` options
+    /// decoding, which only works on the wasm32 target.
+    fn session(legs: Vec<(f64, f64, f64, f64)>, departure_ms: f64) -> RouterSession {
+        let config = LegConfig::try_from(calm_stops_options()).expect("valid options");
+        let forecast_end_ms = departure_ms + 48.0 * HOUR_MS;
+        let (s_lat, s_lon, e_lat, e_lon) = legs[0];
+        let leg_state = LegState::new(
+            s_lat,
+            s_lon,
+            e_lat,
+            e_lon,
+            departure_ms,
+            forecast_end_ms,
+            &config,
+        );
+        RouterSession {
+            polar: PolarData::from_flat(&[0.0, 180.0], &[5.0, 30.0], &[12.0, 12.0, 12.0, 12.0]),
+            config,
+            wind: WeatherStore::new(),
+            current: WeatherStore::new(),
+            land: LandIndex::from_binary(&empty_land_index()).expect("valid land index"),
+            legs,
+            current_leg: 0,
+            leg_state: Some(leg_state),
+            full_route: Vec::new(),
+            departure_ms,
+            forecast_end_ms,
+            done: false,
+            error: None,
+            last_pct: 0.0,
+            last_frontier: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn later_leg_with_no_reachable_positions_is_an_error_not_an_arrival() {
+        let departure_ms = 0.0;
+        // Waypoint (lat 0.03) lies 2.4 nm north of the start, reachable in one
+        // step at 12 kn; the wind grid ends at lat 0, so leg 2 starts in calm.
+        let legs = vec![(-0.01, -0.05, 0.03, -0.05), (0.03, -0.05, 0.06, -0.05)];
+        let mut session = session(legs, departure_ms);
+        let westerly = [10.0f32; 4];
+        let calm = [0.0f32; 4];
+        session.push_wind_frame(departure_ms, &westerly, &calm, -0.1, -0.1, 0.1, 0.1, 2, 2);
+
+        assert_eq!(
+            session.step(),
+            0,
+            "leg 1 should arrive and hand over to leg 2"
+        );
+        assert_eq!(session.current_leg, 1);
+
+        let status = session.step();
+        assert_ne!(
+            status,
+            STATUS_ARRIVED,
+            "route ending at waypoint 1 reported as arrived: {:?}",
+            session.full_route.last().map(|p| (p.lat, p.lon))
+        );
+        assert_eq!(status, STATUS_NO_PROGRESS);
+        assert_eq!(
+            session.error(),
+            Some("No reachable positions on leg 2".to_string())
+        );
+    }
+}
