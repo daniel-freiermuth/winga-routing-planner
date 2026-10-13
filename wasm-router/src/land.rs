@@ -391,6 +391,57 @@ impl LandIndex {
             poly_grid: HashMap::new(),
         }
     }
+
+    /// Index over a single axis-aligned rectangular landmass, for routing tests
+    /// outside this module.
+    pub(crate) fn rectangle(lat_min: f64, lat_max: f64, lon_min: f64, lon_max: f64) -> Self {
+        // Interleaved [lon, lat], closed ring.
+        let exterior = vec![
+            lon_min, lat_min, lon_max, lat_min, lon_max, lat_max, lon_min, lat_max, lon_min,
+            lat_min,
+        ];
+
+        // Axis-aligned edges: rasterizing each edge's bbox hits exactly the cells it touches.
+        let mut edge_grid: HashMap<u32, Vec<u32>> = HashMap::new();
+        let nv = exterior.len() / 2;
+        for ei in 0..nv - 1 {
+            let (lon_a, lat_a) = (exterior[ei * 2], exterior[ei * 2 + 1]);
+            let (lon_b, lat_b) = (exterior[ei * 2 + 2], exterior[ei * 2 + 3]);
+            let lat_lo = (lat_a.min(lat_b) / EDGE_CELL_DEG).floor() as i32;
+            let lat_hi = (lat_a.max(lat_b) / EDGE_CELL_DEG).floor() as i32;
+            let lon_lo = (lon_a.min(lon_b) / EDGE_CELL_DEG).floor() as i32;
+            let lon_hi = (lon_a.max(lon_b) / EDGE_CELL_DEG).floor() as i32;
+            for la in lat_lo..=lat_hi {
+                for lo in lon_lo..=lon_hi {
+                    let cell = edge_grid.entry(edge_cell_key(la, lo)).or_default();
+                    cell.push(0);
+                    cell.push(ei as u32);
+                }
+            }
+        }
+
+        let mut poly_grid: HashMap<u32, Vec<u32>> = HashMap::new();
+        for la in lat_min.floor() as i32..=lat_max.floor() as i32 {
+            for lo in lon_min.floor() as i32..=lon_max.floor() as i32 {
+                poly_grid
+                    .entry(poly_cell_key(la as f64, lo as f64))
+                    .or_default()
+                    .push(0);
+            }
+        }
+
+        Self {
+            polygons: vec![LandPolygon {
+                bbox_lat_min: lat_min,
+                bbox_lat_max: lat_max,
+                bbox_lon_min: lon_min,
+                bbox_lon_max: lon_max,
+                exterior,
+            }],
+            edge_grid,
+            poly_grid,
+        }
+    }
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────

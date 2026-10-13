@@ -519,3 +519,100 @@ fn prune_to_frontier(
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HOUR_MS: f64 = 3_600_000.0;
+    const START_LAT: f64 = 10.0;
+    const START_LON: f64 = 10.0;
+
+    fn config() -> LegConfig {
+        LegConfig {
+            heading_step: 5.0,
+            sector_size: 1.0,
+            min_boat_speed: 0.5,
+            max_wind_kn: 0.0,
+            motor_speed_kn: 0.0,
+            motor_below_kn: 0.0,
+            wait_for_wind: false,
+            tack_penalty_sec: 0.0,
+            tack_threshold_deg: 90.0,
+            cone_half_angle: 90.0,
+            cone_disable_lookahead_nm: 20.0,
+            max_heading_change: 180.0,
+            arrival_radius_nm: 0.0,
+        }
+    }
+
+    /// Uniform ~9.7 kn northerly over the whole test area for 48 h.
+    fn northerly_wind() -> WeatherStore {
+        let mut wind = WeatherStore::new();
+        let u = [0.0f32; 4];
+        let v = [-5.0f32; 4];
+        for t in [0.0, 48.0 * HOUR_MS] {
+            wind.push_frame(t, &u, &v, 9.0, 9.0, 2.0, 2.0, 2, 2);
+        }
+        wind
+    }
+
+    /// Boat sails 5 kn at every TWA from 30° to 180°.
+    fn flat_polar() -> PolarData {
+        PolarData::from_flat(&[30.0, 90.0, 180.0], &[5.0, 30.0], &[5.0; 6])
+    }
+
+    #[test]
+    fn arrival_behind_wall_never_draws_a_segment_through_land() {
+        // Destination 5 NM east of the start, hidden 0.5 NM behind a 6 NM
+        // north-south wall: every approach from the west must round an end.
+        let (end_lat, end_lon) = destination_point(START_LAT, START_LON, 5.0, 90.0);
+        let (_, wall_lon) = destination_point(end_lat, end_lon, 0.5, 270.0);
+        let land =
+            LandIndex::rectangle(end_lat - 0.05, end_lat + 0.05, wall_lon, wall_lon + 0.0005);
+        assert!(land.segment_crosses_land(START_LAT, START_LON, end_lat, end_lon));
+
+        let polar = flat_polar();
+        let config = config();
+        let wind = northerly_wind();
+        let current = WeatherStore::new();
+        let mut leg = LegState::new(
+            START_LAT,
+            START_LON,
+            end_lat,
+            end_lon,
+            0.0,
+            48.0 * HOUR_MS,
+            &config,
+        );
+
+        let mut arrived = false;
+        for _ in 0..200 {
+            match leg.step(&polar, &config, &wind, &current, &land) {
+                StepResult::Running => {}
+                StepResult::Arrived => {
+                    arrived = true;
+                    break;
+                }
+                StepResult::NoProgress | StepResult::ForecastExhausted => break,
+            }
+        }
+        assert!(arrived, "route must reach the destination around the wall");
+
+        let route = leg.backtrack();
+        let last = route.last().expect("route has points");
+        assert_eq!((last.lat, last.lon), (end_lat, end_lon));
+        for (i, pair) in route.windows(2).enumerate() {
+            assert!(
+                !land.segment_crosses_land(pair[0].lat, pair[0].lon, pair[1].lat, pair[1].lon),
+                "route segment {i}→{} ({:.5},{:.5})→({:.5},{:.5}) of {} points crosses land",
+                i + 1,
+                pair[0].lat,
+                pair[0].lon,
+                pair[1].lat,
+                pair[1].lon,
+                route.len(),
+            );
+        }
+    }
+}
