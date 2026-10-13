@@ -251,19 +251,16 @@ impl RouterSession {
                 }
             }
             StepResult::NoProgress => {
-                // Try to use partial route
+                // The frontier is empty, so this leg yields no route; earlier
+                // legs alone end short of the destination and must not be
+                // reported as an arrival.
                 self.finish_leg();
                 self.done = true;
-                if self.full_route.is_empty() {
-                    self.error = Some(format!(
-                        "No reachable positions on leg {}",
-                        self.current_leg
-                    ));
-                    2
-                } else {
-                    // Partial route available
-                    1
-                }
+                self.error = Some(format!(
+                    "No reachable positions on leg {}",
+                    self.current_leg
+                ));
+                2
             }
             StepResult::ForecastExhausted => {
                 self.finish_leg();
@@ -454,12 +451,17 @@ mod tests {
         let calm = [0.0f32; 4];
         session.push_wind_frame(departure_ms, &westerly, &calm, -0.1, -0.1, 0.1, 0.1, 2, 2);
 
-        assert_eq!(session.step(), 0, "leg 1 should arrive and hand over to leg 2");
+        assert_eq!(
+            session.step(),
+            0,
+            "leg 1 should arrive and hand over to leg 2"
+        );
         assert_eq!(session.current_leg, 1);
 
         let status = session.step();
         assert_ne!(
-            status, STATUS_ARRIVED,
+            status,
+            STATUS_ARRIVED,
             "route ending at waypoint 1 reported as arrived: {:?}",
             session.full_route.last().map(|p| (p.lat, p.lon))
         );
