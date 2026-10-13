@@ -50,6 +50,11 @@ import {
 } from '@winga-weather-routing/windy-lib';
 import type { WindyModelKey, WindyTileHeader } from '@winga-weather-routing/windy-lib';
 import type { BoundingBox, CurrentProvider, GribFileMeta, WindProvider, WindVector } from '../types';
+import { lonInFrame } from './geo';
+
+// Tile column x=0 starts at -180°; positions are wrapped into [-180, 180) before tile lookup
+// because the routing corridor may extend past the antimeridian.
+const TILE_GRID_WEST_LON = -180;
 
 // ── Cached tile ───────────────────────────────────────────────────────────────
 
@@ -103,11 +108,12 @@ export function tilesForBbox(bbox: BoundingBox, z: number): { x: number; y: numb
   const n = 2 ** z;
   // lonMin > lonMax means the bbox crosses the antimeridian; wrap x through the tile count.
   // Both edges may fall in the same tile column (e.g. -150..-160), so tile indices alone cannot detect the crossing.
+  // A contiguous bbox may also extend past ±180° (routeBbox output); its out-of-range columns wrap the same way.
   const crossesAntimeridian = bbox.lonMin > bbox.lonMax;
-  const xCount = crossesAntimeridian ? Math.min(n, n - tl.x + br.x + 1) : br.x - tl.x + 1;
+  const xCount = Math.min(n, crossesAntimeridian ? n - tl.x + br.x + 1 : br.x - tl.x + 1);
   const tiles: { x: number; y: number }[] = [];
   for (let i = 0; i < xCount; i++) {
-    const x = (tl.x + i) % n;
+    const x = (((tl.x + i) % n) + n) % n;
     for (let y = tl.y; y <= br.y; y++) {
       tiles.push({ x, y });
     }
@@ -361,6 +367,7 @@ export class TileWindProvider implements WindProvider {
     lon: number,
     validTime: string,
   ): { height: number; period: number; direction: number } | undefined {
+    lon = lonInFrame(lon, TILE_GRID_WEST_LON);
     const { x, y } = latLonToTile(lat, lon, this.zoom);
     const key = tileKey(this.waveModel, 'waves', validTime, this.zoom, x, y);
     const tile = this.cache.get(key);
@@ -373,6 +380,7 @@ export class TileWindProvider implements WindProvider {
 
   /** Sample gust speed (m/s) at a specific valid time. Gust is a scalar (R channel). */
   private sampleGust(lat: number, lon: number, validTime: string): number | undefined {
+    lon = lonInFrame(lon, TILE_GRID_WEST_LON);
     const { x, y } = latLonToTile(lat, lon, this.zoom);
     const key = tileKey(this.windModel, 'gust', validTime, this.zoom, x, y);
     const tile = this.cache.get(key);
@@ -433,6 +441,7 @@ export class TileWindProvider implements WindProvider {
   }
 
   private sampleWind(lat: number, lon: number, validTime: string): WindVector {
+    lon = lonInFrame(lon, TILE_GRID_WEST_LON);
     const { x, y } = latLonToTile(lat, lon, this.zoom);
     const key = tileKey(this.windModel, 'wind', validTime, this.zoom, x, y);
     const tile = this.cache.get(key);
@@ -568,6 +577,7 @@ export class TileCurrentProvider implements CurrentProvider {
   }
 
   private sampleCurrent(lat: number, lon: number, validTime: string): WindVector {
+    lon = lonInFrame(lon, TILE_GRID_WEST_LON);
     const { x, y } = latLonToTile(lat, lon, this.zoom);
     const key = tileKey('cmems', 'seacurrents', validTime, this.zoom, x, y);
     const tile = this.cache.get(key);
