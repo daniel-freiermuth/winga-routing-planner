@@ -40,3 +40,12 @@ void test('tilesForBbox: antimeridian-crossing bbox with both edges in one tile 
     [0, 1, 2, 3, 4, 5, 6, 7],
   );
 });
+
+void test('tilesForBbox: bbox extending west of -180° wraps to the eastern tile column', () => {
+  // At z=4 tiles are 22.5° wide: lon -181 lies in the last column (x=15, 157.5°E..180°), lon -167 in x=0.
+  const tiles = tilesForBbox({ latMin: 32, latMax: 39, lonMin: -181, lonMax: -167 }, 4);
+  assert.deepStrictEqual(
+    tiles.map((t) => t.x),
+    [15, 0],
+  );
+});
