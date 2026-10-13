@@ -372,13 +372,18 @@ impl LegState {
             }
         }
 
-        // Check for arrival
+        // Check for arrival. backtrack() replaces the arrival point with the exact
+        // destination, so the drawn final segment runs from the arrival point's
+        // parent: only accept arrivals whose parent has a land-free line to the end.
         let mut best_arrival: Option<(usize, f64)> = None;
         for &idx in &candidates {
             let p = &self.arena[idx];
             let d = haversine_nm(p.lat, p.lon, end_lat, end_lon);
             if d <= self.arrival_r && (best_arrival.is_none() || d < best_arrival.unwrap().1) {
-                best_arrival = Some((idx, d));
+                let parent = &self.arena[p.parent.expect("candidates always have a parent")];
+                if !land.segment_crosses_land(parent.lat, parent.lon, end_lat, end_lon) {
+                    best_arrival = Some((idx, d));
+                }
             }
         }
         if let Some((idx, _)) = best_arrival {
