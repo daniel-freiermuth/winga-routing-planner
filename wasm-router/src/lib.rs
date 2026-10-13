@@ -258,19 +258,16 @@ impl RouterSession {
                 }
             }
             StepResult::NoProgress => {
-                // Try to use partial route
+                // The frontier is empty, so this leg yields no route; earlier
+                // legs alone end short of the destination and must not be
+                // reported as an arrival.
                 self.finish_leg();
                 self.done = true;
-                if self.full_route.is_empty() {
-                    self.error = Some(format!(
-                        "No reachable positions on leg {}",
-                        self.current_leg
-                    ));
-                    2
-                } else {
-                    // Partial route available
-                    1
-                }
+                self.error = Some(format!(
+                    "No reachable positions on leg {}",
+                    self.current_leg
+                ));
+                2
             }
             StepResult::ForecastExhausted => {
                 self.finish_leg();
