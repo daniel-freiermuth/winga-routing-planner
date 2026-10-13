@@ -403,7 +403,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
         wowDir?: number;
       }[];
       warning?: string;
-      error?: string;
+      message?: string;
     };
     if (j.type === 'progress') {
       const pct = Math.round(j.pct ?? j.progress ?? 0);
@@ -480,14 +480,28 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
           },
         };
         calcState.pendingRouteData = routeData;
-        ctx.setStatus('done', 'Route calculated');
+        // A forecast-truncated route must not read as a completed calculation (Nautical Safety Rule),
+        // so the warning replaces the success text and its popup stays until dismissed.
+        if (j.warning !== undefined) {
+          ctx.setStatus('done', j.warning);
+          ctx.showFailurePopup(j.warning, false);
+        } else {
+          ctx.setStatus('done', 'Route calculated');
+        }
         fetchAndDrawRoute();
-      } else if (j.error !== undefined && j.error !== '') {
-        ctx.setStatus('error', j.error);
-        ctx.showFailurePopup(j.error, false);
+      } else if (j.warning !== undefined) {
+        ctx.setStatus('error', j.warning);
+        ctx.showFailurePopup(j.warning, false);
       } else {
         ctx.setStatus('error', 'No route returned');
       }
+    } else if (j.type === 'error') {
+      ctx.setShowProgress(false);
+      ctx.setCalculating(false);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- worker.ts always sends message with type 'error'
+      const message = j.message!;
+      ctx.setStatus('error', message);
+      ctx.showFailurePopup(message, false);
     }
   });
 
