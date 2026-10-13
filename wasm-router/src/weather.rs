@@ -19,12 +19,19 @@ struct WeatherFrame {
 }
 
 impl WeatherFrame {
+    /// Map a router longitude (wrapped to [-180, 180)) into this frame's 360° window
+    /// starting at `lon_min`, so grids that extend past the antimeridian serve both sides.
+    #[inline]
+    fn lon_in_frame(&self, lon: f64) -> f64 {
+        self.lon_min + (lon - self.lon_min).rem_euclid(360.0)
+    }
+
     /// Bilinear interpolation of a single component at (lat, lon).
     /// Returns None if the point is outside the spatial domain.
     #[inline]
     fn sample_component(&self, lat: f64, lon: f64, data: &[f32]) -> Option<f64> {
         let lat_idx_f = (lat - self.lat_min) / self.lat_step;
-        let lon_idx_f = (lon - self.lon_min) / self.lon_step;
+        let lon_idx_f = (self.lon_in_frame(lon) - self.lon_min) / self.lon_step;
 
         // Outside domain check.
         if lat_idx_f < 0.0
@@ -71,6 +78,7 @@ impl WeatherFrame {
     fn contains(&self, lat: f64, lon: f64) -> bool {
         let lat_max = self.lat_min + (self.n_lat - 1) as f64 * self.lat_step;
         let lon_max = self.lon_min + (self.n_lon - 1) as f64 * self.lon_step;
+        let lon = self.lon_in_frame(lon);
         lat >= self.lat_min && lat <= lat_max && lon >= self.lon_min && lon <= lon_max
     }
 }
