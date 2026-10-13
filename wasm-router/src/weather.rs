@@ -383,4 +383,21 @@ mod tests {
         assert!(!s.covers(10.5, 20.5, 50.0));
         assert!(!s.covers(10.5, 20.5, 250.0));
     }
+
+    #[test]
+    fn frame_extending_past_180_serves_wrapped_longitudes() {
+        // Grid columns at lon 179, 180, 181 (= -179 wrapped); router positions are in [-180, 180).
+        let mut s = WeatherStore::new();
+        let u: Vec<f32> = vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0];
+        let v: Vec<f32> = vec![0.0; 6];
+        s.push_frame(100.0, &u, &v, 10.0, 179.0, 1.0, 1.0, 2, 3);
+
+        assert!(s.covers(10.5, -179.0, 100.0));
+        assert!(s.covers(10.5, -180.0, 100.0));
+        let (u, _) = s.sample(10.5, -179.5, 100.0);
+        assert!((u - 2.5).abs() < 1e-6, "got u={u}");
+        // West of the grid in wrapped coordinates stays uncovered.
+        assert!(!s.covers(10.5, 178.0, 100.0));
+        assert!(!s.covers(10.5, -178.0, 100.0));
+    }
 }
