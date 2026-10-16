@@ -14,7 +14,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.cjs.json",
-    "check": "tsc -p tsconfig.json"
+    "check": "tsc -p tsconfig.json",
+    "test": "tsx --test './__tests__/**/*.test.ts'"
   },
   "engines": {
     "node": ">=18"
