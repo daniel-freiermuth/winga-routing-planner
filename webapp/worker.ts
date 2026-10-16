@@ -14,6 +14,7 @@ import { TileWindProvider, TileCurrentProvider } from '../src/lib/tile-provider'
 import { parsePolarCsv } from '../src/lib/polar';
 import { windSpeedKnots, windDirection } from '../src/lib/geo';
 import type { BoundingBox, CalculationRequest, RoutePoint } from '../src/types';
+import type { StepStatus } from './wasm-pkg/wasm_router.js';
 
 // ── Message types ─────────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ interface WasmModule {
     options: Float64Array,
     land_index: Uint8Array,
   ) => WasmRouterSession;
+  StepStatus: typeof StepStatus;
 }
 
 interface WasmRouterSession {
@@ -110,7 +112,7 @@ interface WasmRouterSession {
     n_lon: number,
   ): void;
   needs(): Float64Array;
-  step(): number;
+  step(): StepStatus;
   progress(): Float64Array;
   route(): Float64Array;
   error(): string | undefined;
@@ -130,6 +132,48 @@ async function loadWasm(): Promise<WasmModule> {
   wasmModule = loaded;
   console.log('[routing] WASM module loaded');
   return loaded;
+}
+
+// ── Step outcome ──────────────────────────────────────────────────────────────
+
+// Upper bound on step() calls per calculation; reaching it means the route did not finish.
+const MAX_STEP_ITERATIONS = 500;
+
+type TerminalOutcome = { type: 'error'; message: string } | { type: 'result'; warning?: string };
+
+/**
+ * Decide what the main thread is told once the step loop ends. Only `Arrived` yields an
+ * unflagged route; every other outcome is a warning or an error so a route that stops
+ * short of the destination is never presented as complete.
+ * `status` is `undefined` when the loop hit MAX_STEP_ITERATIONS before a terminal status.
+ */
+function terminalOutcome(
+  status: StepStatus | undefined,
+  statuses: WasmModule['StepStatus'],
+  sessionError: string | undefined,
+): TerminalOutcome {
+  switch (status) {
+    case statuses.Arrived:
+      return { type: 'result' };
+    case statuses.PartialNoProgress:
+      return {
+        type: 'result',
+        warning: 'Route is partial — no further progress possible (blocked by land, calm or wind limit) before arrival',
+      };
+    case statuses.ForecastExhausted:
+      return { type: 'result', warning: 'Route is partial — forecast coverage exhausted before arrival' };
+    case statuses.Blocked:
+      return {
+        type: 'error',
+        message: sessionError ?? 'No reachable positions — check wind coverage and polar diagram',
+      };
+    case statuses.Running:
+    case undefined:
+      return {
+        type: 'error',
+        message: `Route calculation stopped after ${String(MAX_STEP_ITERATIONS)} steps without reaching the destination`,
+      };
+  }
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -347,8 +391,8 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
   const currentTimesMs = currentProvider.times.map((d) => d.getTime());
 
   try {
-    let exhausted = false;
-    for (let iteration = 0; iteration < 500; iteration++) {
+    let terminalStatus: StepStatus | undefined;
+    for (let iteration = 0; iteration < MAX_STEP_ITERATIONS; iteration++) {
       const bracket = session.needs();
       if (bracket.length === 0) break; // done or error
 
@@ -374,21 +418,8 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
 
       // Run one step
       const stepStatus = session.step();
-
-      if (stepStatus === 1) {
-        // Arrived — extract route
-        break;
-      } else if (stepStatus === 2) {
-        // No progress
-        const err = session.error();
-        if (err !== undefined && err !== '') {
-          post({ type: 'error', message: err });
-          return;
-        }
-        break; // partial route
-      } else if (stepStatus === 3) {
-        // Forecast exhausted
-        exhausted = true;
+      if (stepStatus !== wasm.StepStatus.Running) {
+        terminalStatus = stepStatus;
         break;
       }
 
@@ -434,6 +465,12 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
       if (iteration % 10 === 9) {
         session.evict_old_frames();
       }
+    }
+
+    const outcome = terminalOutcome(terminalStatus, wasm.StepStatus, session.error());
+    if (outcome.type === 'error') {
+      post(outcome);
+      return;
     }
 
     // 5. Extract and enrich route
@@ -484,13 +521,7 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
       route.push(pt);
     }
 
-    if (exhausted) {
-      post({ type: 'result', route, warning: 'Route is partial — forecast coverage exhausted before arrival' });
-    } else if (route.length === 0) {
-      post({ type: 'result', route, warning: 'No route found — check wind coverage and polar diagram' });
-    } else {
-      post({ type: 'result', route });
-    }
+    post({ ...outcome, route });
   } finally {
     session.free();
   }
