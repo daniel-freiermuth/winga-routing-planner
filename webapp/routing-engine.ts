@@ -1,6 +1,7 @@
 // Routing engine — dispatches calculation to the Web Worker and processes results.
 
 import type * as maplibregl from 'maplibre-gl';
+import { routeBbox } from '../src/lib/geo';
 import { sortByBearing, splitByAngularGap } from './utils';
 
 export interface IsochroneState {
@@ -99,14 +100,7 @@ export function renderIsochrone(
  * Build the worker message payload for a routing calculation.
  */
 export function buildWorkerPayload(req: RoutingRequest): unknown {
-  const allCoords = [req.start, ...(req.waypoints ?? []), req.end];
-  const lats = allCoords.map((c) => c.lat);
-  const lons = allCoords.map((c) => c.lon);
-  const latMin = Math.min(...lats);
-  const latMax = Math.max(...lats);
-  const lonMin = Math.min(...lons);
-  const lonMax = Math.max(...lons);
-  const margin = Math.max(3, (latMax - latMin) * 0.3, (lonMax - lonMin) * 0.3);
+  const tileBbox = routeBbox([req.start, ...(req.waypoints ?? []), req.end]);
 
   return {
     type: 'calculate',
@@ -120,12 +114,7 @@ export function buildWorkerPayload(req: RoutingRequest): unknown {
         options: req.options,
       },
       polarCsv: req.polarCsv,
-      tileBbox: {
-        latMin: latMin - margin,
-        latMax: latMax + margin,
-        lonMin: lonMin - margin,
-        lonMax: lonMax + margin,
-      },
+      tileBbox,
       landIndexUrl: new URL(`${import.meta.env.BASE_URL}data/edge-index.bin.gz`, location.href).href,
       dilatedIndexUrl: req.useSafetyMargin
         ? new URL(`${import.meta.env.BASE_URL}data/dilated-edge-index.bin.gz`, location.href).href
