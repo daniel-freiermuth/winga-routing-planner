@@ -13,6 +13,14 @@
 import { TileWindProvider, TileCurrentProvider } from '../src/lib/tile-provider';
 import { parsePolarCsv } from '../src/lib/polar';
 import { windSpeedKnots, windDirection } from '../src/lib/geo';
+import {
+  bracketingSteps,
+  corridorGridSpec,
+  decodeRoute,
+  frontierNearGridEdge,
+  runStepLoop,
+  type CorridorGridSpec,
+} from '../src/lib/wasm-session';
 import type { BoundingBox, CalculationRequest, RoutePoint } from '../src/types';
 
 // ── Message types ─────────────────────────────────────────────────────────────
@@ -177,35 +185,6 @@ interface WeatherGrid {
   nLon: number;
 }
 
-/** Spatial grid metadata for the corridor (shared by wind/current/land sampling). */
-interface CorridorGridSpec {
-  latMin: number;
-  lonMin: number;
-  latStep: number;
-  lonStep: number;
-  nLat: number;
-  nLon: number;
-}
-
-/**
- * Build the corridor grid spec from the route bounding box.
- * Step size matches the tile pixel spacing at the given zoom level
- * so we don't alias away fine structure (e.g. Skagerrak eddies at z=4).
- */
-function corridorGridSpec(bbox: BoundingBox, zoom: number): CorridorGridSpec {
-  // Tile pixel spacing: 360 / (2^z * 256) degrees
-  const step = 360 / (Math.pow(2, zoom) * 256);
-  // Round step to a clean fraction to avoid floating-point drift
-  const cleanStep = Math.round(step * 10000) / 10000;
-  const latMin = Math.floor(bbox.latMin / cleanStep) * cleanStep;
-  const lonMin = Math.floor(bbox.lonMin / cleanStep) * cleanStep;
-  const latMax = Math.ceil(bbox.latMax / cleanStep) * cleanStep;
-  const lonMax = Math.ceil(bbox.lonMax / cleanStep) * cleanStep;
-  const nLat = Math.round((latMax - latMin) / cleanStep) + 1;
-  const nLon = Math.round((lonMax - lonMin) / cleanStep) + 1;
-  return { latMin, lonMin, latStep: cleanStep, lonStep: cleanStep, nLat, nLon };
-}
-
 /**
  * Sample wind at a specific forecast time onto the corridor grid.
  */
@@ -343,111 +322,57 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
 
   // 4. Step loop with on-demand weather streaming
   const LOOKAHEAD_FRAMES = 4; // prefetch this many frames ahead
+  const EDGE_MARGIN_DEG = 1.0;
   const windTimesMs = windProvider.times.map((d) => d.getTime());
   const currentTimesMs = currentProvider.times.map((d) => d.getTime());
 
   try {
-    let exhausted = false;
-    for (let iteration = 0; iteration < 500; iteration++) {
-      const bracket = session.needs();
-      if (bracket.length === 0) break; // done or error
+    const outcome = await runStepLoop(session, {
+      beforeStep: async (iteration, timeLo, timeHi) => {
+        // Report weather-loading status — reuse last WASM pct to avoid bar flicker
+        post({
+          type: 'progress',
+          pct: Math.max(lastPct, 5),
+          frontier: [],
+          status: `Loading weather data (step ${String(iteration + 1)})…`,
+        });
 
-      /* eslint-disable @typescript-eslint/no-non-null-assertion -- bracket has ≥1 element (checked on line 344) */
-      const timeLo = bracket[0]!;
-      const timeHi = bracket[1]!;
-      /* eslint-enable @typescript-eslint/no-non-null-assertion */
-
-      // Report weather-loading status — reuse last WASM pct to avoid bar flicker
-      post({
-        type: 'progress',
-        pct: Math.max(lastPct, 5),
-        frontier: [],
-        status: `Loading weather data (step ${String(iteration + 1)})…`,
-      });
-
-      // Find which forecast steps bracket this time range (+ lookahead)
-      const lookaheadMs = timeHi + LOOKAHEAD_FRAMES * (timeHi - timeLo);
-      await ensureWindFrames(windProvider, windTimesMs, session, gridSpec, timeLo, lookaheadMs);
-      if (hasCurrent) {
-        ensureCurrentFrames(currentProvider, currentTimesMs, session, gridSpec, timeLo, lookaheadMs);
-      }
-
-      // Run one step
-      const stepStatus = session.step();
-
-      if (stepStatus === 1) {
-        // Arrived — extract route
-        break;
-      } else if (stepStatus === 2) {
-        // No progress
-        const err = session.error();
-        if (err !== undefined && err !== '') {
-          post({ type: 'error', message: err });
-          return;
+        // Find which forecast steps bracket this time range (+ lookahead)
+        const lookaheadMs = timeHi + LOOKAHEAD_FRAMES * (timeHi - timeLo);
+        await ensureWindFrames(windProvider, windTimesMs, session, gridSpec, timeLo, lookaheadMs);
+        if (hasCurrent) {
+          ensureCurrentFrames(currentProvider, currentTimesMs, session, gridSpec, timeLo, lookaheadMs);
         }
-        break; // partial route
-      } else if (stepStatus === 3) {
-        // Forecast exhausted
-        exhausted = true;
-        break;
-      }
+      },
+      afterStep: async () => {
+        // Dynamic corridor expansion: if the frontier nears the grid edge, expand the
+        // tile coverage, re-sample weather, and re-push to WASM.
+        if (!frontierNearGridEdge(lastFrontierLats, lastFrontierLons, gridSpec, EDGE_MARGIN_DEG)) return;
+        // Grow tileBbox by 5° in all directions
+        tileBbox.latMin -= 5;
+        tileBbox.latMax += 5;
+        tileBbox.lonMin -= 5;
+        tileBbox.lonMax += 5;
+        // Reload tile metadata for the expanded area
+        await windProvider.load(tileBbox);
+        await currentProvider.load(tileBbox, departureMs, departureMs + 72 * 3_600_000);
+        // Recompute grid and re-push all weather frames
+        gridSpec = corridorGridSpec(tileBbox, zoom);
+        session.clear_weather();
+        pushedWindTimes.clear();
+        pushedCurrentTimes.clear();
+      },
+    });
 
-      // ── Dynamic corridor expansion ──────────────────────────────────────
-      // If any frontier point is within 1° of the grid edge, expand the
-      // tile coverage, re-sample weather, and re-push to WASM.
-      const EDGE_MARGIN = 1.0;
-      if (lastFrontierLats.length > 0) {
-        let needExpand = false;
-        for (let fi = 0; fi < lastFrontierLats.length; fi++) {
-          /* eslint-disable @typescript-eslint/no-non-null-assertion -- fi bounded by lastFrontierLats.length */
-          const fLat = lastFrontierLats[fi]!;
-          const fLon = lastFrontierLons[fi]!;
-          /* eslint-enable @typescript-eslint/no-non-null-assertion */
-          if (
-            fLat < gridSpec.latMin + EDGE_MARGIN ||
-            fLat > gridSpec.latMin + (gridSpec.nLat - 1) * gridSpec.latStep - EDGE_MARGIN ||
-            fLon < gridSpec.lonMin + EDGE_MARGIN ||
-            fLon > gridSpec.lonMin + (gridSpec.nLon - 1) * gridSpec.lonStep - EDGE_MARGIN
-          ) {
-            needExpand = true;
-            break;
-          }
-        }
-        if (needExpand) {
-          // Grow tileBbox by 5° in all directions
-          tileBbox.latMin -= 5;
-          tileBbox.latMax += 5;
-          tileBbox.lonMin -= 5;
-          tileBbox.lonMax += 5;
-          // Reload tile metadata for the expanded area
-          await windProvider.load(tileBbox);
-          await currentProvider.load(tileBbox, departureMs, departureMs + 72 * 3_600_000);
-          // Recompute grid and re-push all weather frames
-          gridSpec = corridorGridSpec(tileBbox, zoom);
-          session.clear_weather();
-          pushedWindTimes.clear();
-          pushedCurrentTimes.clear();
-        }
-      }
-
-      // Evict old frames periodically (every 10 steps)
-      if (iteration % 10 === 9) {
-        session.evict_old_frames();
-      }
+    if (outcome.kind === 'error') {
+      post({ type: 'error', message: outcome.message });
+      return;
     }
 
     // 5. Extract and enrich route
-    const flat = session.route();
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- route header element
-    const nRoutePoints = flat[0]!;
     const route: RoutePoint[] = [];
-    for (let i = 0; i < nRoutePoints; i++) {
-      const base = 1 + i * 7;
-      /* eslint-disable @typescript-eslint/no-non-null-assertion -- structured WASM route array, indices valid by layout */
-      const lat = flat[base]!;
-      const lon = flat[base + 1]!;
-      const timeMs = flat[base + 2]!;
-      /* eslint-enable @typescript-eslint/no-non-null-assertion */
+    for (const p of decodeRoute(session.route())) {
+      const { lat, lon, timeMs } = p;
       const time = new Date(timeMs);
 
       // Resample weather at each waypoint for display-only fields
@@ -462,16 +387,12 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
         lat,
         lon,
         time,
-        /* eslint-disable @typescript-eslint/no-non-null-assertion -- structured WASM route array */
-        ctw: flat[base + 3]!,
-        twa: flat[base + 4]!,
-        /* eslint-enable @typescript-eslint/no-non-null-assertion */
+        ctw: p.ctw,
+        twa: p.twa,
         tws: windSpeedKnots(resampled.u, resampled.v),
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        boatSpeed: flat[base + 5]! > 0 ? flat[base + 5]! : undefined,
+        boatSpeed: p.boatSpeed,
         windDir: windDirection(resampled.u, resampled.v),
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        legCalcMs: flat[base + 6]!,
+        legCalcMs: p.legCalcMs,
         waveHeight: windProvider.getWaveAtTime(lat, lon, timeMs),
         wavePeriod: windProvider.getWavePeriodAtTime(lat, lon, timeMs),
         waveDir: windProvider.getWaveDirAtTime(lat, lon, timeMs),
@@ -484,7 +405,7 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
       route.push(pt);
     }
 
-    if (exhausted) {
+    if (outcome.kind === 'exhausted') {
       post({ type: 'result', route, warning: 'Route is partial — forecast coverage exhausted before arrival' });
     } else if (route.length === 0) {
       post({ type: 'result', route, warning: 'No route found — check wind coverage and polar diagram' });
@@ -569,34 +490,6 @@ function ensureCurrentFrames(
       pushedCurrentTimes.add(ms);
     }
   }
-}
-
-/**
- * Find forecast step timestamps needed to interpolate within [timeLo, timeHi].
- * Returns the lower bracket step (last step ≤ timeLo) plus all steps up to
- * the first step > timeHi.
- */
-function bracketingSteps(timesMs: number[], timeLo: number, timeHi: number): number[] {
-  if (timesMs.length === 0) return [];
-  const result: number[] = [];
-
-  // Binary search for the lower bracket
-  let lo = 0;
-  let hi = timesMs.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if ((timesMs[mid] ?? 0) <= timeLo) lo = mid;
-    else hi = mid - 1;
-  }
-
-  // Include from the lower bracket through the upper bracket of timeHi
-  for (let i = lo; i < timesMs.length; i++) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i bounded by timesMs.length
-    result.push(timesMs[i]!);
-    if ((timesMs[i] ?? 0) > timeHi) break;
-  }
-
-  return result;
 }
 
 // ── Message listener ──────────────────────────────────────────────────────────
