@@ -3,7 +3,9 @@
 ## Prerequisites
 
 - Node.js 20+ (22 or 24 recommended)
-- pnpm
+- pnpm 12 (version pinned in `package.json` `packageManager`). pnpm 11 cannot
+  switch itself to pnpm 12; install it with `npm install -g pnpm@12` or
+  `corepack enable`.
 
 ## Setup
 
