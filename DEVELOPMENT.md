@@ -54,7 +54,7 @@ src/
   lib/routing/              Isochrone algorithm (used by worker.ts)
   lib/geo.ts                Geodesic math (haversine, bearing)
   lib/polar.ts              Polar diagram parsing + interpolation
-  lib/landmask.ts           Land polygon intersection
+  lib/landmask.ts           Land polygon bbox index (land overlay)
   lib/land-index-loader.ts  Binary land index loader
 ```
 
