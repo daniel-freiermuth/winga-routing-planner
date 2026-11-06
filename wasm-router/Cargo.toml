@@ -1,3 +1,4 @@
+# Rust crate for the isochrone router compiled to WebAssembly and run in the routing Web Worker.
 [package]
 name = "wasm-router"
 version = "0.1.0"
@@ -14,3 +15,26 @@ js-sys = "0.3"
 [profile.release]
 opt-level = 3
 lto = true
+codegen-units = 1
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+# The wasm-bindgen constructor and the step loop take the polar/leg/weather inputs as flat arguments.
+too_many_arguments = "allow"
+# Geodesic code pairs names like lat1/lat2, lon_lo/lon_hi by design.
+similar_names = "allow"
+# Grid-cell and index math deliberately casts between f64 and integer types within known ranges.
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+# Public methods are consumed from JS via wasm-bindgen, where #[must_use] has no effect.
+must_use_candidate = "allow"
