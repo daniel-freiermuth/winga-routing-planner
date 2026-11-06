@@ -143,3 +143,29 @@ void test('land-polygons serialization: exterior Float64Array converts to closed
   assert.strictEqual(ringFirst[0], 1); // lon
   assert.strictEqual(ringFirst[1], 1); // lat
 });
+
+// ── Antimeridian tests ─────────────────────────────────────────────────────
+
+// Small island at the prime meridian (lon -0.5 to 0.5, lat -0.5 to 0.5)
+function makePrimeMeridianPoly(): LandPolygon {
+  const coords = [-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5];
+  const exterior = new Float64Array(coords.length);
+  coords.forEach((v, i) => {
+    exterior[i] = v;
+  });
+  return { bboxLatMin: -0.5, bboxLatMax: 0.5, bboxLonMin: -0.5, bboxLonMax: 0.5, exterior };
+}
+
+const pmPoly = makePrimeMeridianPoly();
+const pmIdx = buildLandEdgeIndex([pmPoly]);
+
+void test('segmentCrossesLandFast: antimeridian crossing does not false-positive at lon=0', () => {
+  // Segment from (lat=0, lon=179.5) to (lat=0, lon=-179.5) should cross the
+  // antimeridian via the short 1° arc. It must NOT hit the island at lon=0.
+  // Bug: d_lon = -359 walks the long way through lon=0 → false positive.
+  assert.ok(!segmentCrossesLandFast(pmIdx, 0, 179.5, 0, -179.5));
+});
+
+void test('segmentCrossesLandFast: antimeridian crossing reverse does not false-positive', () => {
+  assert.ok(!segmentCrossesLandFast(pmIdx, 0, -179.5, 0, 179.5));
+});

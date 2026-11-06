@@ -122,6 +122,30 @@ export function segmentCrossesLandFast(
   lat2: number,
   lon2: number,
 ): boolean {
+  // Antimeridian crossing: split into two sub-segments at ±180° so each
+  // half stays on one side and the DDA walk + intersection test are correct.
+  const dLonRaw = lon2 - lon1;
+  if (dLonRaw > 180) {
+    const dLonShort = dLonRaw - 360;
+    const dLat = lat2 - lat1;
+    const t = (-180 - lon1) / dLonShort;
+    const latCross = lat1 + t * dLat;
+    return (
+      segmentCrossesLandFast(index, lat1, lon1, latCross, -180) ||
+      segmentCrossesLandFast(index, latCross, 180, lat2, lon2)
+    );
+  }
+  if (dLonRaw < -180) {
+    const dLonShort = dLonRaw + 360;
+    const dLat = lat2 - lat1;
+    const t = (180 - lon1) / dLonShort;
+    const latCross = lat1 + t * dLat;
+    return (
+      segmentCrossesLandFast(index, lat1, lon1, latCross, 180) ||
+      segmentCrossesLandFast(index, latCross, -180, lat2, lon2)
+    );
+  }
+
   const D = EDGE_CELL_DEG;
   let latCell = Math.floor(lat1 / D);
   let lonCell = Math.floor(lon1 / D);
@@ -129,7 +153,7 @@ export function segmentCrossesLandFast(
   const lonEnd = Math.floor(lon2 / D);
 
   const dLat = lat2 - lat1;
-  const dLon = lon2 - lon1;
+  const dLon = dLonRaw;
   const sLat = dLat > 0 ? 1 : dLat < 0 ? -1 : 0;
   const sLon = dLon > 0 ? 1 : dLon < 0 ? -1 : 0;
   const tDLat = sLat !== 0 ? Math.abs(D / dLat) : Infinity;
