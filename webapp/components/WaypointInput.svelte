@@ -1,4 +1,7 @@
 <script lang="ts">
+  // Waypoint picker: accepts typed coordinates or a vessel/bookmark suggestion and reports the chosen point.
+  import { tryParseCoords } from '../../src/lib/coords';
+
   interface Props {
     label: string;
     value: { lat: number; lon: number } | null;
@@ -43,31 +46,6 @@
     const q = query.trim().toLowerCase();
     return items.filter(s => s.label.toLowerCase().includes(q));
   });
-
-  function tryParseCoords(text: string): { lat: number; lon: number } | null {
-    const trimmed = text.trim();
-    // Try "N57.68 E11.87" or "S57.68 W11.87" style
-    const dirMatch = trimmed.match(/^([NSns])?\s*(-?\d+\.?\d*)\s*[,\s]+\s*([EWew])?\s*(-?\d+\.?\d*)$/);
-    if (dirMatch) {
-      let lat = parseFloat(dirMatch[2]!);
-      let lon = parseFloat(dirMatch[4]!);
-      if (dirMatch[1] && dirMatch[1].toLowerCase() === 's') lat = -lat;
-      if (dirMatch[3] && dirMatch[3].toLowerCase() === 'w') lon = -lon;
-      if (isFinite(lat) && isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
-        return { lat, lon };
-      }
-    }
-    // Try plain "57.68, 11.87" or "57.68 11.87"
-    const plainMatch = trimmed.match(/^(-?\d+\.?\d*)\s*[,\s]+\s*(-?\d+\.?\d*)$/);
-    if (plainMatch) {
-      const lat = parseFloat(plainMatch[1]!);
-      const lon = parseFloat(plainMatch[2]!);
-      if (isFinite(lat) && isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
-        return { lat, lon };
-      }
-    }
-    return null;
-  }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
