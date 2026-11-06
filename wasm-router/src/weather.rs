@@ -19,12 +19,19 @@ struct WeatherFrame {
 }
 
 impl WeatherFrame {
+    /// Map a router longitude (wrapped to [-180, 180)) into this frame's 360° window
+    /// starting at `lon_min`, so grids that extend past the antimeridian serve both sides.
+    #[inline]
+    fn lon_in_frame(&self, lon: f64) -> f64 {
+        self.lon_min + (lon - self.lon_min).rem_euclid(360.0)
+    }
+
     /// Bilinear interpolation of a single component at (lat, lon).
     /// Returns None if the point is outside the spatial domain.
     #[inline]
     fn sample_component(&self, lat: f64, lon: f64, data: &[f32]) -> Option<f64> {
         let lat_idx_f = (lat - self.lat_min) / self.lat_step;
-        let lon_idx_f = (lon - self.lon_min) / self.lon_step;
+        let lon_idx_f = (self.lon_in_frame(lon) - self.lon_min) / self.lon_step;
 
         // Outside domain check.
         if lat_idx_f < 0.0
@@ -71,6 +78,7 @@ impl WeatherFrame {
     fn contains(&self, lat: f64, lon: f64) -> bool {
         let lat_max = self.lat_min + (self.n_lat - 1) as f64 * self.lat_step;
         let lon_max = self.lon_min + (self.n_lon - 1) as f64 * self.lon_step;
+        let lon = self.lon_in_frame(lon);
         lat >= self.lat_min && lat <= lat_max && lon >= self.lon_min && lon <= lon_max
     }
 }
@@ -382,5 +390,22 @@ mod tests {
         // Outside temporal
         assert!(!s.covers(10.5, 20.5, 50.0));
         assert!(!s.covers(10.5, 20.5, 250.0));
+    }
+
+    #[test]
+    fn frame_extending_past_180_serves_wrapped_longitudes() {
+        // Grid columns at lon 179, 180, 181 (= -179 wrapped); router positions are in [-180, 180).
+        let mut s = WeatherStore::new();
+        let u: Vec<f32> = vec![1.0, 2.0, 3.0, 1.0, 2.0, 3.0];
+        let v: Vec<f32> = vec![0.0; 6];
+        s.push_frame(100.0, &u, &v, 10.0, 179.0, 1.0, 1.0, 2, 3);
+
+        assert!(s.covers(10.5, -179.0, 100.0));
+        assert!(s.covers(10.5, -180.0, 100.0));
+        let (u, _) = s.sample(10.5, -179.5, 100.0);
+        assert!((u - 2.5).abs() < 1e-6, "got u={u}");
+        // West of the grid in wrapped coordinates stays uncovered.
+        assert!(!s.covers(10.5, 178.0, 100.0));
+        assert!(!s.covers(10.5, -178.0, 100.0));
     }
 }

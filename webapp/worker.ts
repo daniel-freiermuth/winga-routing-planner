@@ -12,7 +12,7 @@
 
 import { TileWindProvider, TileCurrentProvider } from '../src/lib/tile-provider';
 import { parsePolarCsv } from '../src/lib/polar';
-import { windSpeedKnots, windDirection } from '../src/lib/geo';
+import { windSpeedKnots, windDirection, lonInFrame } from '../src/lib/geo';
 import type { BoundingBox, CalculationRequest, RoutePoint } from '../src/types';
 
 // ── Message types ─────────────────────────────────────────────────────────────
@@ -401,7 +401,8 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
         for (let fi = 0; fi < lastFrontierLats.length; fi++) {
           /* eslint-disable @typescript-eslint/no-non-null-assertion -- fi bounded by lastFrontierLats.length */
           const fLat = lastFrontierLats[fi]!;
-          const fLon = lastFrontierLons[fi]!;
+          // Frontier longitudes are wrapped to [-180, 180); the grid may extend past the antimeridian.
+          const fLon = lonInFrame(lastFrontierLons[fi]!, gridSpec.lonMin);
           /* eslint-enable @typescript-eslint/no-non-null-assertion */
           if (
             fLat < gridSpec.latMin + EDGE_MARGIN ||
