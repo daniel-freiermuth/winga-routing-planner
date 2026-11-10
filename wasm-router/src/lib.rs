@@ -210,7 +210,8 @@ impl RouterSession {
     /// Run one expansion step. Returns a status code:
     /// - `0` = running (frontier advanced)
     /// - `1` = arrived at destination (call `route()` to get results)
-    /// - `2` = no progress (frontier collapsed — blocked or no wind)
+    /// - `2` = no progress (frontier collapsed — blocked or no wind). With `error()` set
+    ///   there is no route; otherwise `route()` holds the legs completed before the collapse.
     /// - `3` = forecast exhausted
     pub fn step(&mut self) -> u32 {
         if self.done {
@@ -258,7 +259,6 @@ impl RouterSession {
                 }
             }
             StepResult::NoProgress => {
-                // Try to use partial route
                 self.finish_leg();
                 self.done = true;
                 if self.full_route.is_empty() {
@@ -266,11 +266,8 @@ impl RouterSession {
                         "No reachable positions on leg {}",
                         self.current_leg
                     ));
-                    2
-                } else {
-                    // Partial route available
-                    1
                 }
+                2
             }
             StepResult::ForecastExhausted => {
                 self.finish_leg();
@@ -366,5 +363,86 @@ impl RouterSession {
                 ));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HOUR_MS: f64 = 3_600_000.0;
+    const FORECAST_END_MS: f64 = 48.0 * HOUR_MS;
+
+    fn config() -> LegConfig {
+        LegConfig {
+            heading_step: 10.0,
+            sector_size: 10.0,
+            min_boat_speed: 0.5,
+            max_wind_kn: 50.0,
+            motor_speed_kn: 0.0,
+            motor_below_kn: 0.0,
+            wait_for_wind: false,
+            tack_penalty_sec: 0.0,
+            tack_threshold_deg: 45.0,
+            cone_half_angle: 90.0,
+            cone_disable_lookahead_nm: 10.0,
+            max_heading_change: 180.0,
+            arrival_radius_nm: 0.0,
+        }
+    }
+
+    /// Uniform wind over lat 30–60, lon −20–20: `calm_ms` at t=0, `storm_ms` from 1 s on.
+    fn wind_turning_to_storm(calm_ms: f32, storm_ms: f32) -> WeatherStore {
+        let (n_lat, n_lon) = (31, 41);
+        let mut ws = WeatherStore::new();
+        for (time_ms, speed) in [(0.0, calm_ms), (1_000.0, storm_ms)] {
+            let u = vec![speed; n_lat * n_lon];
+            let v = vec![0.0; n_lat * n_lon];
+            ws.push_frame(time_ms, &u, &v, 30.0, -20.0, 1.0, 1.0, n_lat, n_lon);
+        }
+        ws
+    }
+
+    /// Session built field-by-field: `new()` takes a `JsValue`, which is unusable off wasm.
+    fn session(legs: Vec<(f64, f64, f64, f64)>, wind: WeatherStore) -> RouterSession {
+        let config = config();
+        let (s_lat, s_lon, e_lat, e_lon) = legs[0];
+        let leg_state = LegState::new(s_lat, s_lon, e_lat, e_lon, 0.0, FORECAST_END_MS, &config);
+        let flat_speeds = vec![6.0; 3 * 2];
+        RouterSession {
+            polar: PolarData::from_flat(&[0.0, 90.0, 180.0], &[0.0, 30.0], &flat_speeds),
+            config,
+            wind,
+            current: WeatherStore::new(),
+            land: LandIndex::empty(),
+            legs,
+            current_leg: 0,
+            leg_state: Some(leg_state),
+            full_route: Vec::new(),
+            departure_ms: 0.0,
+            forecast_end_ms: FORECAST_END_MS,
+            done: false,
+            error: None,
+            last_pct: 0.0,
+            last_frontier: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn frontier_collapse_on_later_leg_is_not_reported_as_arrival() {
+        // Leg 1 (~0.6 nm) is reached in its first step under a 5 m/s breeze. By then the
+        // wind is 60 m/s (> max_wind_kn), so leg 2 cannot expand and its frontier collapses.
+        let mut s = session(
+            vec![(45.0, 0.0, 45.01, 0.0), (45.01, 0.0, 46.0, 0.0)],
+            wind_turning_to_storm(5.0, 60.0),
+        );
+
+        assert_eq!(s.step(), 0, "leg 1 arrives, leg 2 starts");
+        assert_eq!(s.current_leg, 1);
+
+        assert_eq!(s.step(), 2, "leg 2 collapse is no progress, not arrival");
+        assert_eq!(s.error(), None, "leg 1 is kept as a partial route");
+        let last = s.full_route.last().expect("partial route from leg 1");
+        assert!((last.lat - 45.01).abs() < 1e-9 && last.lon.abs() < 1e-9);
     }
 }
