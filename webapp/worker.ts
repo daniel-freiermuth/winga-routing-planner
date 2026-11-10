@@ -343,6 +343,7 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
 
   try {
     let exhausted = false;
+    let collapsed = false;
     for (let iteration = 0; iteration < 500; iteration++) {
       const bracket = session.needs();
       if (bracket.length === 0) break; // done or error
@@ -380,7 +381,8 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
           post({ type: 'error', message: err });
           return;
         }
-        break; // partial route
+        collapsed = true; // partial route: legs completed before the collapse
+        break;
       } else if (stepStatus === 3) {
         // Forecast exhausted
         exhausted = true;
@@ -432,6 +434,10 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
       }
     }
 
+    // A session that still needs weather was cut off by the step limit mid-leg:
+    // route() then holds only the legs completed so far.
+    const stepLimitHit = session.needs().length > 0;
+
     // 5. Extract and enrich route
     const flat = session.route();
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- route header element
@@ -482,6 +488,14 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
 
     if (exhausted) {
       post({ type: 'result', route, warning: 'Route is partial — forecast coverage exhausted before arrival' });
+    } else if (stepLimitHit) {
+      post({ type: 'result', route, warning: 'Route is incomplete — step limit reached before arrival' });
+    } else if (collapsed) {
+      post({
+        type: 'result',
+        route,
+        warning: 'Route is partial — no reachable positions on a later leg (blocked by land or wind limits)',
+      });
     } else if (route.length === 0) {
       post({ type: 'result', route, warning: 'No route found — check wind coverage and polar diagram' });
     } else {
