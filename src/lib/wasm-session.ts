@@ -1,6 +1,7 @@
 // Routing-worker glue to the WASM RouterSession: step-loop status handling, forecast-frame bracketing, corridor grid spec, flat route decoding.
 
 import type { BoundingBox } from '../types';
+import type { StepStatus } from '../../webapp/wasm-pkg/wasm_router.js';
 import { lonInFrame } from './geo';
 
 /** Hard cap on session.step() calls per calculation. */
@@ -9,10 +10,11 @@ export const MAX_STEP_ITERATIONS = 500;
 /** Evict expired weather frames from the session every this many steps. */
 const EVICT_INTERVAL_STEPS = 10;
 
-// RouterSession.step() return codes (wasm-router/src/lib.rs)
-const STEP_ARRIVED = 1;
-const STEP_NO_PROGRESS = 2;
-const STEP_FORECAST_EXHAUSTED = 3;
+/** The wasm-bindgen StepStatus enum object; passed in because the wasm-pkg module is only loaded inside the worker. */
+export type StepStatuses = typeof StepStatus;
+
+/** Reported when a Blocked session carries no error() text. */
+const BLOCKED_FALLBACK_MESSAGE = 'No reachable positions — check wind coverage and polar diagram';
 
 /** Number of f64 fields per point in RouterSession.route(): lat, lon, timeMs, ctw, twa, boatSpeed, legCalcMs. */
 export const ROUTE_STRIDE = 7;
@@ -20,7 +22,7 @@ export const ROUTE_STRIDE = 7;
 /** Subset of the WASM RouterSession used by the step loop. */
 export interface StepSession {
   needs(): Float64Array;
-  step(): number;
+  step(): StepStatus;
   error(): string | undefined;
   evict_old_frames(): void;
 }
@@ -35,13 +37,17 @@ export interface StepLoopHooks {
 export type StepLoopOutcome =
   | { kind: 'idle' } // needs() returned an empty bracket
   | { kind: 'arrived' }
-  | { kind: 'noProgress' } // step() returned no-progress without an error message
+  | { kind: 'noProgress' } // frontier collapsed after earlier legs; route() is partial
   | { kind: 'error'; message: string }
   | { kind: 'exhausted' }
   | { kind: 'iterationLimit' };
 
 /** Drive the session until it arrives, stops, fails, or hits MAX_STEP_ITERATIONS. */
-export async function runStepLoop(session: StepSession, hooks: StepLoopHooks): Promise<StepLoopOutcome> {
+export async function runStepLoop(
+  session: StepSession,
+  statuses: StepStatuses,
+  hooks: StepLoopHooks,
+): Promise<StepLoopOutcome> {
   for (let iteration = 0; iteration < MAX_STEP_ITERATIONS; iteration++) {
     const bracket = session.needs();
     if (bracket.length === 0) return { kind: 'idle' };
@@ -53,13 +59,18 @@ export async function runStepLoop(session: StepSession, hooks: StepLoopHooks): P
 
     await hooks.beforeStep(iteration, timeLo, timeHi);
 
-    const stepStatus = session.step();
-    if (stepStatus === STEP_ARRIVED) return { kind: 'arrived' };
-    if (stepStatus === STEP_NO_PROGRESS) {
-      const err = session.error();
-      return err !== undefined && err !== '' ? { kind: 'error', message: err } : { kind: 'noProgress' };
+    switch (session.step()) {
+      case statuses.Running:
+        break;
+      case statuses.Arrived:
+        return { kind: 'arrived' };
+      case statuses.PartialNoProgress:
+        return { kind: 'noProgress' };
+      case statuses.Blocked:
+        return { kind: 'error', message: session.error() ?? BLOCKED_FALLBACK_MESSAGE };
+      case statuses.ForecastExhausted:
+        return { kind: 'exhausted' };
     }
-    if (stepStatus === STEP_FORECAST_EXHAUSTED) return { kind: 'exhausted' };
 
     await hooks.afterStep();
 

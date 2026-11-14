@@ -13,6 +13,7 @@ import {
   type StepLoopHooks,
   type StepSession,
 } from '../wasm-session';
+import { StepStatus } from '../../../webapp/wasm-pkg/wasm_router.js';
 
 // ── runStepLoop ───────────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ interface FakeSession extends StepSession {
 }
 
 /** Session that returns `statuses` from successive step() calls, then repeats the last one. */
-function fakeSession(statuses: number[], opts: { error?: string; bracket?: number[] } = {}): FakeSession {
+function fakeSession(statuses: StepStatus[], opts: { error?: string; bracket?: number[] } = {}): FakeSession {
   const log: string[] = [];
   let calls = 0;
   return {
@@ -29,7 +30,7 @@ function fakeSession(statuses: number[], opts: { error?: string; bracket?: numbe
     needs: () => new Float64Array(opts.bracket ?? [1000, 2000]),
     step: () => {
       log.push('step');
-      const status = statuses[Math.min(calls, statuses.length - 1)] ?? 0;
+      const status = statuses[Math.min(calls, statuses.length - 1)] ?? StepStatus.Running;
       calls++;
       return status;
     },
@@ -54,8 +55,8 @@ function recordingHooks(log: string[]): StepLoopHooks {
 }
 
 void test('runStepLoop: pushes weather for the needed bracket before every step, until arrival', async () => {
-  const session = fakeSession([0, 0, 1], { bracket: [1000, 4600] });
-  const outcome = await runStepLoop(session, recordingHooks(session.log));
+  const session = fakeSession([StepStatus.Running, StepStatus.Running, StepStatus.Arrived], { bracket: [1000, 4600] });
+  const outcome = await runStepLoop(session, StepStatus, recordingHooks(session.log));
   assert.deepStrictEqual(outcome, { kind: 'arrived' });
   assert.deepStrictEqual(session.log, [
     'before 0 1000 4600',
@@ -69,45 +70,47 @@ void test('runStepLoop: pushes weather for the needed bracket before every step,
   ]);
 });
 
-void test('runStepLoop: no-progress with an error message → error outcome carrying the message', async () => {
-  const session = fakeSession([2], { error: 'Start position is on land' });
-  const outcome = await runStepLoop(session, recordingHooks(session.log));
+void test('runStepLoop: blocked → error outcome carrying the session message, or a non-empty fallback', async () => {
+  const withMessage = fakeSession([StepStatus.Blocked], { error: 'Start position is on land' });
+  const outcome = await runStepLoop(withMessage, StepStatus, recordingHooks(withMessage.log));
   assert.deepStrictEqual(outcome, { kind: 'error', message: 'Start position is on land' });
+
+  const withoutMessage = fakeSession([StepStatus.Blocked]);
+  const fallback = await runStepLoop(withoutMessage, StepStatus, recordingHooks(withoutMessage.log));
+  assert.ok(fallback.kind === 'error' && fallback.message !== '', 'blocked without a message is still an error');
 });
 
-void test('runStepLoop: no-progress with empty or missing error → noProgress, distinct from arrival', async () => {
-  for (const error of ['', undefined]) {
-    const session = fakeSession([0, 2], error === undefined ? {} : { error });
-    const outcome = await runStepLoop(session, recordingHooks(session.log));
-    assert.deepStrictEqual(outcome, { kind: 'noProgress' });
-    assert.strictEqual(session.log.filter((e) => e === 'after').length, 1, 'afterStep not run for terminal step');
-  }
+void test('runStepLoop: partial no-progress → noProgress, distinct from arrival', async () => {
+  const session = fakeSession([StepStatus.Running, StepStatus.PartialNoProgress]);
+  const outcome = await runStepLoop(session, StepStatus, recordingHooks(session.log));
+  assert.deepStrictEqual(outcome, { kind: 'noProgress' });
+  assert.strictEqual(session.log.filter((e) => e === 'after').length, 1, 'afterStep not run for terminal step');
 });
 
 void test('runStepLoop: forecast exhausted → exhausted outcome', async () => {
-  const session = fakeSession([0, 0, 3]);
-  const outcome = await runStepLoop(session, recordingHooks(session.log));
+  const session = fakeSession([StepStatus.Running, StepStatus.Running, StepStatus.ForecastExhausted]);
+  const outcome = await runStepLoop(session, StepStatus, recordingHooks(session.log));
   assert.deepStrictEqual(outcome, { kind: 'exhausted' });
 });
 
 void test('runStepLoop: empty needs() bracket stops before stepping', async () => {
-  const session = fakeSession([1], { bracket: [] });
-  const outcome = await runStepLoop(session, recordingHooks(session.log));
+  const session = fakeSession([StepStatus.Arrived], { bracket: [] });
+  const outcome = await runStepLoop(session, StepStatus, recordingHooks(session.log));
   assert.deepStrictEqual(outcome, { kind: 'idle' });
   assert.deepStrictEqual(session.log, []);
 });
 
 void test('runStepLoop: never-arriving session stops at the iteration cap with iterationLimit', async () => {
-  const session = fakeSession([0]);
-  const outcome = await runStepLoop(session, recordingHooks(session.log));
+  const session = fakeSession([StepStatus.Running]);
+  const outcome = await runStepLoop(session, StepStatus, recordingHooks(session.log));
   assert.deepStrictEqual(outcome, { kind: 'iterationLimit' });
   assert.strictEqual(session.log.filter((e) => e === 'step').length, MAX_STEP_ITERATIONS);
 });
 
 void test('runStepLoop: evicts old frames after every 10th running step', async () => {
-  const statuses = [...Array<number>(25).fill(0), 1];
+  const statuses = [...Array<StepStatus>(25).fill(StepStatus.Running), StepStatus.Arrived];
   const session = fakeSession(statuses);
-  await runStepLoop(session, recordingHooks(session.log));
+  await runStepLoop(session, StepStatus, recordingHooks(session.log));
   const steps = session.log.filter((e) => e === 'step' || e === 'evict');
   assert.strictEqual(steps.filter((e) => e === 'evict').length, 2);
   // Eviction follows the 10th and 20th step
