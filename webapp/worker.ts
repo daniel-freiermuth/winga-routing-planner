@@ -22,6 +22,7 @@ import {
   type CorridorGridSpec,
 } from '../src/lib/wasm-session';
 import type { BoundingBox, CalculationRequest, RoutePoint, RoutingOptions, RoutingPreferences } from '../src/types';
+import type { StepStatus } from './wasm-pkg/wasm_router.js';
 
 // ── Message types ─────────────────────────────────────────────────────────────
 
@@ -104,6 +105,7 @@ interface WasmModule {
     options: RoutingOptions,
     land_index: Uint8Array,
   ) => WasmRouterSession;
+  StepStatus: typeof StepStatus;
 }
 
 interface WasmRouterSession {
@@ -130,7 +132,7 @@ interface WasmRouterSession {
     n_lon: number,
   ): void;
   needs(): Float64Array;
-  step(): number;
+  step(): StepStatus;
   progress(): Float64Array;
   route(): Float64Array;
   error(): string | undefined;
@@ -322,7 +324,7 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
   const currentTimesMs = currentProvider.times.map((d) => d.getTime());
 
   try {
-    const outcome = await runStepLoop(session, {
+    const outcome = await runStepLoop(session, wasm.StepStatus, {
       beforeStep: async (iteration, timeLo, timeHi) => {
         // Report weather-loading status — reuse last WASM pct to avoid bar flicker
         post({
