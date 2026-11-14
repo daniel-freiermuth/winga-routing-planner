@@ -1,6 +1,7 @@
 // Pure conversion of worker route points into GeoJSON RouteData (with derived COG/SOG/current) and scrubber lookup.
 
 import type { WaypointMeta, RouteData } from './types';
+import { haversineNM, bearingTo, currentDirection } from '../src/lib/geo';
 
 /** Route point as received from the routing worker (structured clone keeps `time` a Date). */
 export interface WorkerRoutePoint {
@@ -24,10 +25,8 @@ export interface WorkerRoutePoint {
 }
 
 const MS_TO_KN = 1.94384;
-const EARTH_RADIUS_NM = 3440.065;
 const MIN_CURRENT_KN = 0.01;
 const MS_PER_HOUR = 3600000;
-const DEG_TO_RAD = Math.PI / 180;
 
 function toMeta(p: WorkerRoutePoint, prev: WorkerRoutePoint | undefined): WaypointMeta {
   const meta: WaypointMeta = {
@@ -50,20 +49,13 @@ function toMeta(p: WorkerRoutePoint, prev: WorkerRoutePoint | undefined): Waypoi
     const cSpd = Math.sqrt(p.currentU * p.currentU + p.currentV * p.currentV) * MS_TO_KN;
     if (cSpd > MIN_CURRENT_KN) {
       meta.currentSpeedKn = cSpd;
-      meta.currentDir = (Math.atan2(p.currentU, p.currentV) / DEG_TO_RAD + 360) % 360;
+      meta.currentDir = currentDirection(p.currentU, p.currentV);
     }
   }
   // COG and SOG from consecutive positions (ground track)
   if (prev) {
-    const dLat = (p.lat - prev.lat) * DEG_TO_RAD;
-    const dLon = (p.lon - prev.lon) * DEG_TO_RAD;
-    const lat1r = prev.lat * DEG_TO_RAD;
-    const lat2r = p.lat * DEG_TO_RAD;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1r) * Math.cos(lat2r) * Math.sin(dLon / 2) ** 2;
-    const distNM = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * EARTH_RADIUS_NM;
-    const y = Math.sin(dLon) * Math.cos(lat2r);
-    const x = Math.cos(lat1r) * Math.sin(lat2r) - Math.sin(lat1r) * Math.cos(lat2r) * Math.cos(dLon);
-    meta.cogDeg = (Math.atan2(y, x) / DEG_TO_RAD + 360) % 360;
+    const distNM = haversineNM(prev.lat, prev.lon, p.lat, p.lon);
+    meta.cogDeg = bearingTo(prev.lat, prev.lon, p.lat, p.lon);
     const t0 = typeof prev.time === 'string' ? new Date(prev.time).getTime() : Number(prev.time);
     const t1 = typeof p.time === 'string' ? new Date(p.time).getTime() : Number(p.time);
     const dtH = (t1 - t0) / MS_PER_HOUR;
