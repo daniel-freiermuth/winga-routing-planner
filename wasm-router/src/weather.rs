@@ -1,3 +1,4 @@
+// Wind forecast frame store: bilinear/temporal sampling and coverage checks for the WASM router.
 /// Wind weather data store with bilinear spatial and linear temporal interpolation.
 ///
 /// Stores GRIB-style forecast frames as flat row-major grids and provides
@@ -175,14 +176,7 @@ impl WeatherStore {
                 .unwrap_or((0.0, 0.0));
         }
 
-        // Find bracketing frames via linear scan (typically few frames).
-        let mut lo = 0;
-        for i in 1..self.frames.len() {
-            if self.frames[i].time_ms > time_ms {
-                break;
-            }
-            lo = i;
-        }
+        let lo = self.bracket_lo(time_ms);
         let hi = lo + 1;
 
         let f_lo = &self.frames[lo];
@@ -223,15 +217,18 @@ impl WeatherStore {
         if time_ms >= last_time {
             return self.frames[self.frames.len() - 1].contains(lat, lon);
         }
-        // Find bracketing frames.
-        let mut lo = 0;
-        for i in 1..self.frames.len() {
-            if self.frames[i].time_ms > time_ms {
-                break;
-            }
-            lo = i;
-        }
+        let lo = self.bracket_lo(time_ms);
         self.frames[lo].contains(lat, lon) && self.frames[lo + 1].contains(lat, lon)
+    }
+
+    /// Index of the last frame at or before `time_ms`, scanning linearly
+    /// (typically few frames). Callers guarantee `time_ms` lies strictly
+    /// inside the temporal domain, so `lo + 1` is always a valid frame.
+    fn bracket_lo(&self, time_ms: f64) -> usize {
+        self.frames[1..]
+            .iter()
+            .take_while(|f| f.time_ms <= time_ms)
+            .count()
     }
 }
 
