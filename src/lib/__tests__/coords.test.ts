@@ -61,3 +61,21 @@ void test('tryParseCoords: non-coordinate text is rejected', () => {
   assert.strictEqual(tryParseCoords('57.68'), null);
   assert.strictEqual(tryParseCoords('57.68, 11.87, 3'), null);
 });
+
+void test('tryParseCoords: a single decimal-comma value is rejected, not split into a pair', () => {
+  assert.strictEqual(tryParseCoords('57,68'), null);
+  assert.strictEqual(tryParseCoords('-57,68'), null);
+  assert.strictEqual(tryParseCoords('N57,68'), null);
+});
+
+void test('tryParseCoords: degrees-minutes text is rejected, not read as a pair', () => {
+  assert.strictEqual(tryParseCoords('57 41.5'), null);
+  assert.strictEqual(tryParseCoords('57 41'), null);
+  assert.strictEqual(tryParseCoords('N57 41.5'), null);
+});
+
+void test('tryParseCoords: integer pairs with an explicit separator or both hemisphere letters are accepted', () => {
+  assert.deepStrictEqual(tryParseCoords('57, 68'), { lat: 57, lon: 68 });
+  assert.deepStrictEqual(tryParseCoords('N57 E41.5'), { lat: 57, lon: 41.5 });
+  assert.deepStrictEqual(tryParseCoords('57.0 41.5'), { lat: 57, lon: 41.5 });
+});
