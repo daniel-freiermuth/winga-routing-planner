@@ -23,7 +23,7 @@ pnpm build:webapp   # webapp only
 ## Checking
 
 ```bash
-pnpm check          # tsc + svelte-check + eslint + tests
+pnpm check          # tsc (root, webapp, windy-lib) + svelte-check + eslint + tests
 ```
 
 ## Development server
@@ -71,7 +71,8 @@ src/
 ## Running tests
 
 ```bash
-pnpm test
+pnpm test                  # root (src/, webapp/) + windy-lib suites
+pnpm -C windy-lib/ts test  # windy-lib suite only
 ```
 
 ## Generating land data
