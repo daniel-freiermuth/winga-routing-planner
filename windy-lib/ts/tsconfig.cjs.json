@@ -8,5 +8,5 @@
     "declaration": false,
     "sourceMap": false
   },
-  "exclude": ["dist"]
+  "exclude": ["dist", "__tests__"]
 }
