@@ -14,6 +14,10 @@ import {
   type StepSession,
 } from '../wasm-session';
 import { StepStatus } from '../../../webapp/wasm-pkg/wasm_router.js';
+import { latLonToTile } from '@winga-weather-routing/windy-lib';
+import { padLatBounds, routeBbox } from '../geo';
+import { tilesForBbox } from '../tile-provider';
+import type { LatLon } from '../../types';
 
 // ── runStepLoop ───────────────────────────────────────────────────────────────
 
@@ -195,6 +199,63 @@ void test('corridorGridSpec: grid covers the bbox edges with less than one step 
       assert.ok(g.lonMin <= bbox.lonMin + EPS && bbox.lonMin - g.lonMin < g.lonStep);
       assert.ok(latMax >= bbox.latMax - EPS && latMax - bbox.latMax < g.latStep);
       assert.ok(lonMax >= bbox.lonMax - EPS && lonMax - bbox.lonMax < g.lonStep);
+    }
+  }
+});
+
+void test('corridorGridSpec: grid of a pole-padded route bbox samples only existing tile rows', () => {
+  // Padding stops short of the tile limit by more than the outward rounding, so no grid row samples a missing tile.
+  const svalbard = routeBbox([
+    { lat: 69.6, lon: 19 },
+    { lat: 78.2, lon: 15.6 },
+  ]);
+  const bboxes = [
+    routeBbox([
+      { lat: -42.9, lon: 147.3 },
+      { lat: -56, lon: -67.3 },
+    ]),
+    { ...svalbard, ...padLatBounds(svalbard.latMin, svalbard.latMax, 5) },
+  ];
+  for (const bbox of bboxes) {
+    for (const zoom of [3, 4]) {
+      const g = corridorGridSpec(bbox, zoom);
+      const n = 2 ** zoom;
+      for (const lat of [g.latMin, g.latMin + (g.nLat - 1) * g.latStep]) {
+        const { y } = latLonToTile(lat, 0, zoom);
+        assert.ok(y >= 0 && y < n, `grid row at ${String(lat)}° maps to tile row ${String(y)} at z=${String(zoom)}`);
+      }
+    }
+  }
+});
+
+void test('corridorGridSpec: grid edge rows of a route bbox beyond the padding limit are requested tile rows', () => {
+  // A grid row in a tile that is never requested samples silent calm; a requested out-of-range row fails the fetch loudly.
+  const routes: [LatLon, LatLon][] = [
+    [
+      { lat: 85, lon: 20 },
+      { lat: 80, lon: 20 },
+    ],
+    [
+      { lat: 85.04, lon: 20 },
+      { lat: 83, lon: 22 },
+    ],
+    [
+      { lat: 86, lon: 20 },
+      { lat: 80.5, lon: 20 },
+    ],
+  ];
+  for (const route of routes) {
+    const bbox = routeBbox(route);
+    for (const zoom of [3, 4]) {
+      const g = corridorGridSpec(bbox, zoom);
+      const requested = new Set(tilesForBbox(bbox, zoom).map((t) => t.y));
+      for (const lat of [g.latMin, g.latMin + (g.nLat - 1) * g.latStep]) {
+        const { y } = latLonToTile(lat, 0, zoom);
+        assert.ok(
+          requested.has(y),
+          `grid row at ${String(lat)}° samples unrequested tile row ${String(y)} at z=${String(zoom)}`,
+        );
+      }
     }
   }
 });
