@@ -12,7 +12,7 @@
 
 import { TileWindProvider, TileCurrentProvider } from '../src/lib/tile-provider';
 import { parsePolarCsv } from '../src/lib/polar';
-import { windSpeedKnots, windDirection } from '../src/lib/geo';
+import { windSpeedKnots, windDirection, padLatBounds } from '../src/lib/geo';
 import {
   bracketingSteps,
   corridorGridSpec,
@@ -320,6 +320,7 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
   // 4. Step loop with on-demand weather streaming
   const LOOKAHEAD_FRAMES = 4; // prefetch this many frames ahead
   const EDGE_MARGIN_DEG = 1.0;
+  const CORRIDOR_GROWTH_DEG = 5;
   const windTimesMs = windProvider.times.map((d) => d.getTime());
   const currentTimesMs = currentProvider.times.map((d) => d.getTime());
 
@@ -344,12 +345,13 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
       afterStep: async () => {
         // Dynamic corridor expansion: if the frontier nears the grid edge, expand the
         // tile coverage, re-sample weather, and re-push to WASM.
-        if (!frontierNearGridEdge(lastFrontierLats, lastFrontierLons, gridSpec, EDGE_MARGIN_DEG)) return;
-        // Grow tileBbox by 5° in all directions
-        tileBbox.latMin -= 5;
-        tileBbox.latMax += 5;
-        tileBbox.lonMin -= 5;
-        tileBbox.lonMax += 5;
+        const grownLat = padLatBounds(tileBbox.latMin, tileBbox.latMax, CORRIDOR_GROWTH_DEG);
+        const latGrowable = { south: grownLat.latMin < tileBbox.latMin, north: grownLat.latMax > tileBbox.latMax };
+        if (!frontierNearGridEdge(lastFrontierLats, lastFrontierLons, gridSpec, EDGE_MARGIN_DEG, latGrowable)) return;
+        // Grow tileBbox in all directions; latitude stops at the tile coverage limit
+        Object.assign(tileBbox, grownLat);
+        tileBbox.lonMin -= CORRIDOR_GROWTH_DEG;
+        tileBbox.lonMax += CORRIDOR_GROWTH_DEG;
         // Reload tile metadata for the expanded area
         await windProvider.load(tileBbox);
         await currentProvider.load(tileBbox, departureMs, departureMs + 72 * 3_600_000);
