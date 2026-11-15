@@ -5,6 +5,7 @@
 - Routing options reach the router as named, validated fields; a missing, non-finite or negative option now fails the calculation with an error instead of falling back to a default
 - A max wave height limit now fails the calculation with an error; previously it was silently ignored because wave data does not reach the router
 - A route cut short by an impassable later leg or by the 500-step calculation limit now shows a partial-route warning; previously it was reported as "Route calculated"
+- A typed waypoint that combines a hemisphere letter with a minus sign on the same value (e.g. `S-33.86 E151.2`) is now rejected; previously the two signs cancelled and the waypoint landed in the opposite hemisphere
 
 ## 0.1.0
 

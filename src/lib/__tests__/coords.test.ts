@@ -49,6 +49,12 @@ void test('tryParseCoords: longitude beyond 180 is rejected', () => {
   assert.strictEqual(tryParseCoords('N0 W180.0001'), null);
 });
 
+void test('tryParseCoords: hemisphere letter combined with a minus sign is rejected', () => {
+  assert.strictEqual(tryParseCoords('S-33.86 E151.2'), null);
+  assert.strictEqual(tryParseCoords('N57.68 W-11.87'), null);
+  assert.strictEqual(tryParseCoords('n-57.68, e-11.87'), null);
+});
+
 void test('tryParseCoords: non-coordinate text is rejected', () => {
   assert.strictEqual(tryParseCoords(''), null);
   assert.strictEqual(tryParseCoords('Gothenburg'), null);
