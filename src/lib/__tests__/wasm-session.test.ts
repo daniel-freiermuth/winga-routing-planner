@@ -264,10 +264,11 @@ void test('corridorGridSpec: grid edge rows of a route bbox beyond the padding l
 
 // Grid spanning lat 50..60, lon 0..10
 const GRID: CorridorGridSpec = { latMin: 50, lonMin: 0, latStep: 1, lonStep: 1, nLat: 11, nLon: 11 };
+const BOTH_LAT_EDGES_GROW = { south: true, north: true };
 
 void test('frontierNearGridEdge: empty frontier or all points inside the margin → no expansion', () => {
-  assert.strictEqual(frontierNearGridEdge([], [], GRID, 1), false);
-  assert.strictEqual(frontierNearGridEdge([55, 51, 59], [5, 1, 9], GRID, 1), false);
+  assert.strictEqual(frontierNearGridEdge([], [], GRID, 1, BOTH_LAT_EDGES_GROW), false);
+  assert.strictEqual(frontierNearGridEdge([55, 51, 59], [5, 1, 9], GRID, 1, BOTH_LAT_EDGES_GROW), false);
 });
 
 void test('frontierNearGridEdge: any point within the margin of any edge → expansion', () => {
@@ -278,15 +279,28 @@ void test('frontierNearGridEdge: any point within the margin of any edge → exp
     [55, 9.1],
   ];
   for (const [lat, lon] of near) {
-    assert.strictEqual(frontierNearGridEdge([55, lat], [5, lon], GRID, 1), true, `(${String(lat)}, ${String(lon)})`);
+    assert.strictEqual(
+      frontierNearGridEdge([55, lat], [5, lon], GRID, 1, BOTH_LAT_EDGES_GROW),
+      true,
+      `(${String(lat)}, ${String(lon)})`,
+    );
   }
 });
 
 void test('frontierNearGridEdge: grid past the antimeridian — wrapped frontier longitudes are compared in grid frame', () => {
   // Grid spanning lon 170..190; frontier longitudes arrive wrapped to [-180, 180).
   const across: CorridorGridSpec = { latMin: 50, lonMin: 170, latStep: 1, lonStep: 1, nLat: 11, nLon: 21 };
-  assert.strictEqual(frontierNearGridEdge([55, 55], [178, -175], across, 1), false);
-  assert.strictEqual(frontierNearGridEdge([55], [-170.5], across, 1), true);
+  assert.strictEqual(frontierNearGridEdge([55, 55], [178, -175], across, 1, BOTH_LAT_EDGES_GROW), false);
+  assert.strictEqual(frontierNearGridEdge([55], [-170.5], across, 1, BOTH_LAT_EDGES_GROW), true);
+});
+
+void test('frontierNearGridEdge: a latitude edge that cannot grow does not trigger expansion', () => {
+  // An edge already at the corridor latitude limit: expanding cannot move it, so a frontier there must not re-trigger.
+  assert.strictEqual(frontierNearGridEdge([59.1], [5], GRID, 1, { south: true, north: false }), false);
+  assert.strictEqual(frontierNearGridEdge([50.9], [5], GRID, 1, { south: false, north: true }), false);
+  assert.strictEqual(frontierNearGridEdge([59.1], [5], GRID, 1, { south: false, north: true }), true);
+  // Longitude edges still count.
+  assert.strictEqual(frontierNearGridEdge([55], [9.1], GRID, 1, { south: false, north: false }), true);
 });
 
 // ── decodeRoute ───────────────────────────────────────────────────────────────

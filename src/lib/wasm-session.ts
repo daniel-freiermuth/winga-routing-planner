@@ -111,10 +111,18 @@ export function corridorGridSpec(bbox: BoundingBox, zoom: number): CorridorGridS
 }
 
 /**
- * True if any frontier point lies within `margin` degrees of the grid edge.
- * Frontier longitudes are wrapped to [-180, 180); the grid may extend past the antimeridian.
+ * True if any frontier point lies within `margin` degrees of a grid edge the corridor can still grow past.
+ * Latitude edges flagged in `latGrowable` as unable to grow (already at the corridor latitude limit) never count,
+ * since expanding would not move them. Frontier longitudes are wrapped to [-180, 180); the grid may extend past
+ * the antimeridian.
  */
-export function frontierNearGridEdge(lats: number[], lons: number[], spec: CorridorGridSpec, margin: number): boolean {
+export function frontierNearGridEdge(
+  lats: number[],
+  lons: number[],
+  spec: CorridorGridSpec,
+  margin: number,
+  latGrowable: { south: boolean; north: boolean },
+): boolean {
   const latMax = spec.latMin + (spec.nLat - 1) * spec.latStep;
   const lonMax = spec.lonMin + (spec.nLon - 1) * spec.lonStep;
   for (let i = 0; i < lats.length; i++) {
@@ -122,7 +130,12 @@ export function frontierNearGridEdge(lats: number[], lons: number[], spec: Corri
     const lat = lats[i]!;
     const lon = lonInFrame(lons[i]!, spec.lonMin);
     /* eslint-enable @typescript-eslint/no-non-null-assertion */
-    if (lat < spec.latMin + margin || lat > latMax - margin || lon < spec.lonMin + margin || lon > lonMax - margin) {
+    if (
+      (latGrowable.south && lat < spec.latMin + margin) ||
+      (latGrowable.north && lat > latMax - margin) ||
+      lon < spec.lonMin + margin ||
+      lon > lonMax - margin
+    ) {
       return true;
     }
   }
