@@ -5,6 +5,9 @@ import {
   haversineNM,
   bearingTo,
   destinationPoint,
+  CORRIDOR_MAX_LAT,
+  padLatBounds,
+  POLAR_PAD_MAX_LAT,
   routeBbox,
   windSpeedKnots,
   windDirection,
@@ -141,4 +144,33 @@ void test('routeBbox: each leg is unwrapped from the previous point', () => {
     ]),
     { latMin: -48, latMax: 48, lonMin: 52, lonMax: 308 },
   );
+});
+
+void test('routeBbox: long east-west route margin stops at the corridor latitude limit', () => {
+  // Hobart → Cape Horn: the 30% longitude-span margin (~70°) would push latMin past the South Pole.
+  const bbox = routeBbox([
+    { lat: -42.9, lon: 147.3 },
+    { lat: -56, lon: -67.3 },
+  ]);
+  assert.strictEqual(bbox.latMin, -CORRIDOR_MAX_LAT);
+  assert.ok(Math.abs(bbox.latMax - 0.72) < EPSILON, `latMax ${String(bbox.latMax)}`);
+});
+
+void test('padLatBounds: widens by the pad but never past the corridor latitude limit', () => {
+  assert.deepStrictEqual(padLatBounds(50, 60, 5), { latMin: 45, latMax: 65 });
+  // Tromsø → Svalbard corridor (latMax 81.2) grown by a 5° expansion step.
+  assert.deepStrictEqual(padLatBounds(63.6, 81.2, 5), { latMin: 58.6, latMax: CORRIDOR_MAX_LAT });
+  assert.deepStrictEqual(padLatBounds(-82, 0, 5), { latMin: -CORRIDOR_MAX_LAT, latMax: 5 });
+});
+
+void test('padLatBounds: a bound at the limit stays there', () => {
+  assert.deepStrictEqual(padLatBounds(70, CORRIDOR_MAX_LAT, 5), { latMin: 65, latMax: CORRIDOR_MAX_LAT });
+});
+
+void test('padLatBounds: a bound already beyond the limit (a route point there) is padded but stops short of the pole', () => {
+  // Its out-of-coverage tile rows must still be requested, so the calculation fails loudly instead of sampling calm;
+  // a bound at or past ±90° would map to no tile row at all.
+  assert.deepStrictEqual(padLatBounds(80, 85, 3), { latMin: 77, latMax: 88 });
+  assert.deepStrictEqual(padLatBounds(-87, 88, 5), { latMin: -POLAR_PAD_MAX_LAT, latMax: POLAR_PAD_MAX_LAT });
+  assert.deepStrictEqual(padLatBounds(-90, 90, 3), { latMin: -POLAR_PAD_MAX_LAT, latMax: POLAR_PAD_MAX_LAT });
 });

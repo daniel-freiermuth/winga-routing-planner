@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tilesForBbox, TileWindProvider } from '../tile-provider';
 import { routeBbox } from '../geo';
+import type { LatLon } from '../../types';
 
 // At z=3, there are 2^3 = 8 tiles along x (indices 0–7).
 // latLonToTile(40, 170, 3) → x=7;  latLonToTile(30, -170, 3) → x=0.
@@ -65,6 +66,62 @@ void test('tilesForBbox: route bbox across the antimeridian covers both sides wi
   }
   // z=4: 172°E lies in column 15, 188° (= 172°W) in column 0.
   assert.deepStrictEqual([...new Set(tiles.map((t) => t.x))], [15, 0]);
+});
+
+void test('tilesForBbox: long east-west Southern Ocean route bbox yields tiles in valid rows', () => {
+  // Hobart → Cape Horn spans ~146° of longitude; its margin must not push the corridor past the Mercator pole limit.
+  const bbox = routeBbox([
+    { lat: -42.9, lon: 147.3 },
+    { lat: -56, lon: -67.3 },
+  ]);
+  const z = TileWindProvider.computeZoom(bbox);
+  const tiles = tilesForBbox(bbox, z);
+  const n = 2 ** z;
+  assert.ok(tiles.length > 0, 'route bbox must yield tiles');
+  for (const t of tiles) {
+    assert.ok(t.x >= 0 && t.x < n && t.y >= 0 && t.y < n, `tile out of range: ${JSON.stringify(t)}`);
+  }
+  assert.deepStrictEqual([...new Set(tiles.map((t) => t.y))], [3, 4, 5, 6, 7]);
+});
+
+void test('tilesForBbox: route bbox beyond the tile coverage limit keeps its out-of-coverage rows', () => {
+  // Route points poleward of the Web Mercator tiles: their rows must still be requested (even when the margin would
+  // cross the pole), so the fetch fails loudly instead of the corridor sampling silent calm.
+  const routes: [LatLon, LatLon][] = [
+    [
+      { lat: 86, lon: 20 },
+      { lat: 80.5, lon: 20 },
+    ],
+    [
+      { lat: 88, lon: 0 },
+      { lat: 80, lon: 0 },
+    ],
+    [
+      { lat: 85, lon: 0 },
+      { lat: 85, lon: 100 },
+    ],
+    [
+      { lat: 90, lon: 0 },
+      { lat: 84, lon: 60 },
+    ],
+    [
+      { lat: -86, lon: 0 },
+      { lat: -80, lon: -60 },
+    ],
+    [
+      { lat: -90, lon: 0 },
+      { lat: -80, lon: 0 },
+    ],
+  ];
+  for (const route of routes) {
+    const bbox = routeBbox(route);
+    const z = TileWindProvider.computeZoom(bbox);
+    const ys = tilesForBbox(bbox, z).map((t) => t.y);
+    assert.ok(
+      ys.some((y) => y < 0 || y >= 2 ** z),
+      `${JSON.stringify(route)}: polar rows dropped: ${JSON.stringify([...new Set(ys)])}`,
+    );
+  }
 });
 
 // ── TileWindProvider with stubbed Windy network + image decoding ──────────────
