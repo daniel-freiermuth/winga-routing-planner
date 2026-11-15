@@ -2,9 +2,16 @@
 
 const MAX_ABS_LAT = 90;
 const MAX_ABS_LON = 180;
+// "57,68" (one decimal-comma value) and "57 41.5" (degrees and minutes) also fit the pair patterns below;
+// without a longitude hemisphere letter the intended position is unknowable, so reject rather than guess.
+const DECIMAL_COMMA_VALUE = /^[NSns]?\s*-?\d+,\d+$/;
+const DEGREES_MINUTES = /^[NSns]?\s*-?\d+\s+-?\d+\.?\d*$/;
 
 export function tryParseCoords(text: string): { lat: number; lon: number } | null {
   const trimmed = text.trim();
+  if (DECIMAL_COMMA_VALUE.test(trimmed) || DEGREES_MINUTES.test(trimmed)) {
+    return null;
+  }
   // Try "N57.68 E11.87" or "S57.68 W11.87" style
   const dirMatch = /^([NSns])?\s*(-?\d+\.?\d*)\s*[,\s]+\s*([EWew])?\s*(-?\d+\.?\d*)$/.exec(trimmed);
   // A hemisphere letter and a minus sign on the same value give two conflicting signs; reject rather than guess.
