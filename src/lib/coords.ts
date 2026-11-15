@@ -7,6 +7,12 @@ export function tryParseCoords(text: string): { lat: number; lon: number } | nul
   const trimmed = text.trim();
   // Try "N57.68 E11.87" or "S57.68 W11.87" style
   const dirMatch = /^([NSns])?\s*(-?\d+\.?\d*)\s*[,\s]+\s*([EWew])?\s*(-?\d+\.?\d*)$/.exec(trimmed);
+  // A hemisphere letter and a minus sign on the same value give two conflicting signs; reject rather than guess.
+  const latSignConflict = dirMatch?.[1] !== undefined && dirMatch[2]?.startsWith('-') === true;
+  const lonSignConflict = dirMatch?.[3] !== undefined && dirMatch[4]?.startsWith('-') === true;
+  if (latSignConflict || lonSignConflict) {
+    return null;
+  }
   if (dirMatch) {
     let lat = parseFloat(dirMatch[2] ?? '');
     let lon = parseFloat(dirMatch[4] ?? '');
