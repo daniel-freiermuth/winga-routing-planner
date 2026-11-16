@@ -20,7 +20,7 @@
   import Disclaimer from './Disclaimer.svelte';
   import MapContextMenu from './MapContextMenu.svelte';
 
-  import type { WaypointMeta, GraphLayout, RouteData, UnitPref, GribFileMeta } from '../types';
+  import type { WaypointMeta, RouteData, UnitPref, GribFileMeta } from '../types';
   import type { CalculationApi } from '../calculation';
   import type { SkDeps } from '../sk-resources';
   import type { ConfigCallbacks } from '../config';
@@ -234,8 +234,6 @@
   // Conditions panel: visible when route results exist in summary view
   const conditionsVisible = $derived(sidebarView === 'summary' && calcState.graphMeta != null && calcState.graphMeta.length > 0);
   let conditionsExpanded = $state(true);
-
-  // Bind:this refs for graph tooltip
 
   // Subscribe to overlay data stores (forecast-fetcher writes to these)
   windPointsStore.subscribe(v => { windPointsData = v; });
@@ -615,14 +613,7 @@
       getWindSpeedMs: () => configState.windSpeedMs,
       getWindTimes: () => windTimes,
       getWindTimesLoaded: () => windTimesLoaded,
-      getGribInfoFiles: () => gribInfoFiles,
-      getForecastSkillHorizonHours: () => configState.forecastSkillHorizonHours,
       getPolarCsv: () => polarCsv ?? undefined,
-      setConditionsGraph: (data) => {
-        if (data) {
-          calcState.graphLayout = data.layout;
-        }
-      },
       lockScrubberToRoute: (i0, iN) => {
         calcState.routeScrubberRange = { i0, iN };
         calcState.scrubberLockedToRoute = true;

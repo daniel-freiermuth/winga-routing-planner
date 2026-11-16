@@ -47,7 +47,7 @@ webapp/                     Svelte 5 + MapLibre GL JS (client-side)
   data-layer.ts             Windy tile fetching and sampling
   forecast-fetcher.ts       Overlay data fetching (writes to stores)
   route-display.ts          Route polyline + wind barb rendering (MapLibre)
-  calculation.ts            Routing worker orchestration + conditions graph
+  calculation.ts            Routing worker orchestration + route result state
   worker.ts                 Web Worker — runs isochrone algorithm
   route-weather.ts          Per-waypoint weather analysis along a route
 src/

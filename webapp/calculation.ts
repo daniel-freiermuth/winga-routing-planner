@@ -3,11 +3,10 @@
 
 import * as maplibregl from 'maplibre-gl';
 import { calcState, removeSourceAndLayer } from './calc-state.svelte';
-import type { WaypointMeta, GraphLayout, RouteData, GribFileMeta } from './types';
+import type { RouteData } from './types';
 import type { ScrubberState } from './scrubber-controller';
-import { fmt as _fmt, toDisplay as _toDisplay } from './units';
+import { fmt as _fmt } from './units';
 import { drawRoute } from './route-display';
-import { buildConditionsGraph } from './conditions-graph';
 import { buildWorkerPayload, renderIsochrone, clearIsochrones } from './routing-engine';
 import type { IsochroneState } from './routing-engine';
 import { routePointsToRouteData, findScrubberPosition } from './route-meta';
@@ -20,19 +19,6 @@ interface LatLon {
 
 // RoutingPreferences convention: 0 disables a limit or motoring.
 const DISABLED = 0;
-
-const C64_PALETTE = [
-  '#6c7086',
-  '#ffffff',
-  '#883932',
-  '#67b6bd',
-  '#8b3f96',
-  '#55a049',
-  '#40318d',
-  '#bfce72',
-  '#8b5429',
-  '#574200',
-];
 
 interface RoutingOptionsLike {
   getOptions: () => {
@@ -66,8 +52,7 @@ interface CalculationContext {
   fetchWavePointsAt(timeIdx: number): Promise<void>;
   scrubberState(): ScrubberState;
 
-  // Conditions graph callbacks (replace getElementById)
-  setConditionsGraph(data: { svgContent: string; viewBox: string; hasWave: boolean; layout: GraphLayout } | null): void;
+  // Route-result callbacks (replace getElementById)
   lockScrubberToRoute(i0: number, iN: number): void;
   setRouteWaypointTimes(times: string[]): void;
   setShowRangeToggle(v: boolean): void;
@@ -84,8 +69,6 @@ interface CalculationContext {
   getWindTimesLoaded(): boolean;
   getDepartureTime(): string;
   getIsochroneEnabled(): boolean;
-  getGribInfoFiles(): GribFileMeta[];
-  getForecastSkillHorizonHours(): number;
   getPolarCsv(): string | undefined;
 }
 
@@ -94,30 +77,6 @@ export interface CalculationApi {
   drawRouteFromData(route: RouteData): void;
   fetchAndDrawRoute(): void;
   updateScrubberHighlight(windTimeIdx: number): void;
-}
-
-// ── Internal helpers ──────────────────────────────────────────────────────────
-
-function drawConditionsGraph(ctx: CalculationContext, meta: WaypointMeta[], intermediateIdxs: number[] = []) {
-  const result = buildConditionsGraph({
-    meta,
-    intermediateIdxs,
-    windSpeedMs: ctx.getWindSpeedMs(),
-    gribInfoFiles: ctx.getGribInfoFiles(),
-    c64Palette: C64_PALETTE,
-    forecastSkillHorizonHours: ctx.getForecastSkillHorizonHours(),
-    toDisplay: _toDisplay,
-    fmt: _fmt,
-  });
-  if (!result) return;
-  calcState.graphMeta = meta;
-  calcState.graphLayout = result.layout;
-  ctx.setConditionsGraph({
-    svgContent: result.svgContent,
-    viewBox: result.viewBox,
-    hasWave: result.hasWave,
-    layout: result.layout,
-  });
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -155,7 +114,6 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
           const opts = routingOptions?.getOptions();
           return { labels: opts?.waypointLabels ?? true, intervalH: opts?.waypointLabelInterval ?? 0 };
         },
-        routeWaypoints: ctx.getRouteWaypoints(),
         setStatus: (type: string, msg: string) => {
           ctx.setStatus(type, msg);
         },
@@ -193,7 +151,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
       map.on('mouseleave', 'calculated-route-line', () => {
         map.getCanvas().style.cursor = '';
       });
-      drawConditionsGraph(ctx, result.meta, result.intermediateIdxs);
+      if (result.meta.length >= 2) calcState.graphMeta = result.meta;
       if (ctx.getWindTimesLoaded() && result.meta.length > 0) {
         // Inject route waypoint times into the scrubber time grid
         ctx.setRouteWaypointTimes(result.meta.map((m) => m.time));
@@ -247,7 +205,7 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
   function updateScrubberHighlight(windTimeIdx: number) {
     // No-op when route isn't being displayed (e.g. user is back in planning mode)
     if (!calcState.pendingRouteData) return;
-    if (!calcState.graphMeta || calcState.graphMeta.length < 2 || !calcState.graphLayout) return;
+    if (!calcState.graphMeta || calcState.graphMeta.length < 2) return;
     const windTimes = ctx.getWindTimes();
     const t = windTimes[windTimeIdx];
     if (t === undefined || t === '') return;

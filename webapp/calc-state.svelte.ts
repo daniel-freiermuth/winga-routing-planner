@@ -5,7 +5,7 @@
 // It removes map objects, then resets all data. Adding a field? Add it to
 // CalcState + freshCalcState(). If it's a map resource, add cleanup in resetCalcState().
 
-import type { WaypointMeta, GraphLayout, RouteData } from './types';
+import type { WaypointMeta, RouteData } from './types';
 import type * as maplibregl from 'maplibre-gl';
 
 interface SourceAndLayer {
@@ -25,7 +25,6 @@ interface CalcState {
   routeLegCoords: [number, number][][];
   prevHighlightWpIdx: number;
   graphMeta: WaypointMeta[] | null;
-  graphLayout: GraphLayout | null;
   calcStream: { close(): void } | null;
   pendingRouteData: RouteData | null;
 }
@@ -43,7 +42,6 @@ function freshCalcState(): CalcState {
     routeLegCoords: [],
     prevHighlightWpIdx: -1,
     graphMeta: null,
-    graphLayout: null,
     calcStream: null,
     pendingRouteData: null,
   };

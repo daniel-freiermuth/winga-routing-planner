@@ -28,12 +28,6 @@ export async function loadConfig(
     }
     configState.windSpeedMs = cfg['windSpeedMs'] === true;
     windSpeedMsStore.set(configState.windSpeedMs);
-    const graphHeight = cfg['conditionsGraphHeight'];
-    if (typeof graphHeight === 'number') {
-      configState.conditionsGraphHeight = graphHeight;
-    }
-    const horizonHours = cfg['forecastSkillHorizonHours'];
-    if (typeof horizonHours === 'number') configState.forecastSkillHorizonHours = horizonHours;
   } catch {
     /* no config file */
   }

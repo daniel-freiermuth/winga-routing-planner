@@ -8,6 +8,7 @@
 - A typed waypoint that combines a hemisphere letter with a minus sign on the same value (e.g. `S-33.86 E151.2`) is now rejected; previously the two signs cancelled and the waypoint landed in the opposite hemisphere
 - Typed waypoint text that is a single decimal-comma value ("57,68") or degrees and minutes ("57 41.5") is now rejected; previously it was read as a latitude/longitude pair
 - Long east-west routes in high latitudes (e.g. Hobart → Cape Horn) now fetch weather; previously the corridor margin reached past the pole, no tiles were fetched and the route was calculated in zero wind and current. Corridor expansion near 85° latitude no longer requests non-existent tiles, which aborted the calculation
+- `conditionsGraphHeight` and `forecastSkillHorizonHours` in `config.json` are no longer read; neither has had a visible effect since the conditions graph was replaced by the conditions table
 
 ## 0.1.0
 
