@@ -13,7 +13,6 @@ interface RouteDisplayCtx {
   fmt: (value: number, category: 'speed' | 'depth', forceMs?: boolean) => FmtResult;
   windSpeedMs: boolean;
   getWaypointLabels: () => { labels: boolean; intervalH: number };
-  routeWaypoints: { lat: number; lon: number }[];
   setStatus: (type: string, msg: string) => void;
 }
 
@@ -24,7 +23,6 @@ interface RouteDisplayResult {
   windBarbMarkers: (maplibregl.Marker | null)[];
   routeLegCoords: [number, number][][];
   meta: WaypointMeta[];
-  intermediateIdxs: number[];
 }
 
 const ROUTE_SOURCE = 'calculated-route';
@@ -66,24 +64,6 @@ export function drawRoute(route: RouteData, ctx: RouteDisplayCtx): RouteDisplayR
       [coords[i + 1]![1]!, coords[i + 1]![0]!],
     ]);
   }
-
-  // Find intermediate waypoint indices
-  const intermediateIdxs = ctx.routeWaypoints
-    .map((wp) => {
-      let best = -1,
-        bestDist = Infinity;
-      coords.forEach(([lng, lat]: number[], i: number) => {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const d = Math.hypot(lat! - wp.lat, lng! - wp.lon);
-        if (d < bestDist) {
-          bestDist = d;
-          best = i;
-        }
-      });
-      return best;
-    })
-    .filter((i) => i > 0 && i < coords.length - 1);
-
   return {
     routeLayer,
     windBarbLayer: [],
@@ -91,6 +71,5 @@ export function drawRoute(route: RouteData, ctx: RouteDisplayCtx): RouteDisplayR
     windBarbMarkers: [],
     routeLegCoords,
     meta,
-    intermediateIdxs,
   };
 }

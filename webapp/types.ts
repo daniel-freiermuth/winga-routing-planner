@@ -21,19 +21,6 @@ export interface WaypointMeta {
   wowDir?: number; // wind-over-water direction (degrees, meteorological FROM)
 }
 
-export interface GraphLayout {
-  VW: number;
-  ml: number;
-  pw: number;
-  mt: number;
-  ph: number;
-  hasWave: boolean;
-  hasGrib: boolean;
-  maxLeft: number;
-  maxBoatSpeed: number;
-  maxWave: number;
-}
-
 export interface RouteData {
   feature: {
     type: string;

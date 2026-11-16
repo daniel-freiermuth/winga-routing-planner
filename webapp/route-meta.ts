@@ -64,7 +64,7 @@ function toMeta(p: WorkerRoutePoint, prev: WorkerRoutePoint | undefined): Waypoi
   return meta;
 }
 
-/** Convert worker route points into the GeoJSON RouteData consumed by drawRoute and the conditions graph. */
+/** Convert worker route points into the GeoJSON RouteData consumed by drawRoute and the conditions table. */
 export function routePointsToRouteData(route: WorkerRoutePoint[]): RouteData {
   return {
     feature: {
