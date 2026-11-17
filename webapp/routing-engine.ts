@@ -4,7 +4,7 @@ import type * as maplibregl from 'maplibre-gl';
 import { routeBbox } from '../src/lib/geo';
 import { sortByBearing, splitByAngularGap } from './utils';
 import { landIndexFile } from './saved-routing-settings';
-import type { RoutingPreferences } from '../src/types';
+import type { RoutingPreferences, WorkerInMessage } from '../src/types';
 
 export interface IsochroneState {
   sourceIds: string[];
@@ -91,7 +91,7 @@ export function renderIsochrone(
 /**
  * Build the worker message payload for a routing calculation.
  */
-export function buildWorkerPayload(req: RoutingRequest): unknown {
+export function buildWorkerPayload(req: RoutingRequest): WorkerInMessage {
   const tileBbox = routeBbox([req.start, ...(req.waypoints ?? []), req.end]);
 
   return {

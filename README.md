@@ -122,7 +122,7 @@ At each isochrone step, the algorithm computes:
 5. **Tack penalty** — if heading changes > threshold, deduct penalty time from the step
 6. **Water track** — boat moves at polar speed along CTW
 7. **Ground track** — water track + current displacement
-8. **Land/region check** — ground track tested against GSHHG coastline and avoidance regions
+8. **Land check** — ground track tested against the GSHHG coastline (SignalK regions are displayed only; the router does not use them)
 
 ### Displayed vs computed values
 
