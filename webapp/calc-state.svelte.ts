@@ -17,11 +17,8 @@ interface CalcState {
   routeScrubberRange: { i0: number; iN: number } | null;
   scrubberLockedToRoute: boolean;
   routeLayer: SourceAndLayer | null;
-  windBarbLayer: maplibregl.Marker[];
-  legLabelLayer: SourceAndLayer | null;
   highlightLegLayer: SourceAndLayer | null;
   highlightMarker: maplibregl.Marker | null;
-  windBarbMarkers: (maplibregl.Marker | null)[];
   routeLegCoords: [number, number][][];
   prevHighlightWpIdx: number;
   graphMeta: WaypointMeta[] | null;
@@ -34,11 +31,8 @@ function freshCalcState(): CalcState {
     routeScrubberRange: null,
     scrubberLockedToRoute: false,
     routeLayer: null,
-    windBarbLayer: [],
-    legLabelLayer: null,
     highlightLegLayer: null,
     highlightMarker: null,
-    windBarbMarkers: [],
     routeLegCoords: [],
     prevHighlightWpIdx: -1,
     graphMeta: null,
@@ -61,8 +55,6 @@ export function removeSourceAndLayer(map: maplibregl.Map, ids: SourceAndLayer): 
 export function resetCalcState(map?: maplibregl.Map): void {
   if (map) {
     if (calcState.routeLayer) removeSourceAndLayer(map, calcState.routeLayer);
-    for (const m of calcState.windBarbLayer) m.remove();
-    if (calcState.legLabelLayer) removeSourceAndLayer(map, calcState.legLabelLayer);
     if (calcState.highlightLegLayer) removeSourceAndLayer(map, calcState.highlightLegLayer);
     if (calcState.highlightMarker) calcState.highlightMarker.remove();
   }
