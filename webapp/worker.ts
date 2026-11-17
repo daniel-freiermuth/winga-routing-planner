@@ -2,8 +2,8 @@
 //
 // PROTOCOL
 // ─────────
-// Main thread → Worker:
-//   { type: 'calculate', payload: CalculateRequest }
+// Main thread → Worker (contract: WorkerInMessage in src/types.ts, validated by parseWorkerInMessage):
+//   { type: 'calculate', payload: CalculatePayload }
 //
 // Worker → Main thread:
 //   { type: 'progress', pct: number, frontier: [number,number][] }
@@ -21,25 +21,11 @@ import {
   runStepLoop,
   type CorridorGridSpec,
 } from '../src/lib/wasm-session';
-import type { BoundingBox, CalculationRequest, RoutePoint, RoutingOptions, RoutingPreferences } from '../src/types';
+import type { CalculatePayload, RoutePoint, RoutingOptions, RoutingPreferences } from '../src/types';
+import { parseWorkerInMessage } from './worker-protocol';
 import type { StepStatus } from './wasm-pkg/wasm_router.js';
 
 // ── Message types ─────────────────────────────────────────────────────────────
-
-interface CalculatePayload {
-  request: CalculationRequest;
-  polarCsv: string;
-  tileBbox: BoundingBox;
-  landIndexUrl: string;
-  dilatedIndexUrl?: string;
-  windModel?: 'ecmwf' | 'gfs' | 'icon';
-  useSafetyMargin?: boolean;
-}
-
-interface InMessage {
-  type: 'calculate';
-  payload: CalculatePayload;
-}
 
 type OutMessage =
   | {
@@ -248,7 +234,7 @@ const pushedWindTimes = new Set<number>();
 const pushedCurrentTimes = new Set<number>();
 
 async function handleCalculate(payload: CalculatePayload): Promise<void> {
-  const { request, polarCsv, landIndexUrl, dilatedIndexUrl, windModel, useSafetyMargin } = payload;
+  const { request, polarCsv, landIndexUrl, windModel } = payload;
   const tileBbox = { ...payload.tileBbox };
 
   const departureMs = new Date(request.departureTime).getTime();
@@ -263,15 +249,13 @@ async function handleCalculate(payload: CalculatePayload): Promise<void> {
   const polar = parsePolarCsv(polarCsv);
 
   // 2. Load everything in parallel (land index as raw binary, not parsed to JS objects)
-  const landBinaryFetch = fetchGzBinary(
-    useSafetyMargin === true && dilatedIndexUrl !== undefined ? dilatedIndexUrl : landIndexUrl,
-  );
+  const landBinaryFetch = fetchGzBinary(landIndexUrl);
 
   // Use the full tile coverage area as the weather corridor — let the
   // routing algorithm explore freely instead of pre-guessing a corridor.
   // tileBbox already has generous margin (30% of route span, min 3°).
   const zoom = TileWindProvider.computeZoom(tileBbox, 2);
-  const windProvider = new TileWindProvider({ windModel: windModel ?? 'ecmwf', zoom });
+  const windProvider = new TileWindProvider({ windModel, zoom });
   const currentProvider = new TileCurrentProvider(zoom);
 
   const [landBinary] = await Promise.all([
@@ -506,13 +490,11 @@ function ensureCurrentFrames(
 // ── Message listener ──────────────────────────────────────────────────────────
 
 self.addEventListener('message', (event: MessageEvent) => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- MessageEvent.data is inherently untyped
-  const msg = event.data as InMessage;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive runtime type check
-  if (msg.type === 'calculate') {
-    handleCalculate(msg.payload).catch((e: unknown) => {
+  // Parse inside the chain so a contract mismatch reaches the UI as an error, like any calculation failure.
+  Promise.resolve()
+    .then(async () => handleCalculate(parseWorkerInMessage(event.data).payload))
+    .catch((e: unknown) => {
       const message = e instanceof Error ? e.message : String(e);
       post({ type: 'error', message });
     });
-  }
 });

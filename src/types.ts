@@ -93,9 +93,23 @@ export interface CalculationRequest {
   end: LatLon;
   departureTime: string; // ISO 8601
   waypoints?: LatLon[]; // intermediate required waypoints in order
-  useSafetyMargin?: boolean;
-  useLandAvoidance?: boolean;
-  enabledGribPaths?: string[]; // if absent, all files are used
-  avoidRegionIds?: string[];
   options: RoutingPreferences;
+}
+
+export type WindModel = 'ecmwf' | 'gfs' | 'icon';
+
+/** Everything the routing worker needs for one calculation. */
+export interface CalculatePayload {
+  request: CalculationRequest;
+  polarCsv: string;
+  tileBbox: BoundingBox;
+  /** Plain or dilated (safety-margin) land index; the main thread picks which. */
+  landIndexUrl: string;
+  windModel: WindModel;
+}
+
+/** Main thread → routing worker message. */
+export interface WorkerInMessage {
+  type: 'calculate';
+  payload: CalculatePayload;
 }
