@@ -247,7 +247,7 @@
   let routeWeatherMarkers: maplibregl.Marker[] = [];
 
   // SettingsModal component ref (replaces RoutingOptions)
-  let settingsModalRef = $state<{ getOptions: () => { useLandAvoidance: boolean; useSafetyMargin: boolean; motorBelowKn: number | undefined; motorSpeedKn: number | undefined; waitForWind: boolean | undefined; maxWindKn: number | undefined; maxWaveM: number | undefined; tackPenaltySec: number; tackThresholdDeg: number; waypointLabels: boolean; waypointLabelInterval: number } } | undefined>();
+  let settingsModalRef = $state<{ getOptions: () => { useSafetyMargin: boolean; motorBelowKn: number | undefined; motorSpeedKn: number | undefined; waitForWind: boolean | undefined; maxWindKn: number | undefined; maxWaveM: number | undefined; tackPenaltySec: number; tackThresholdDeg: number; waypointLabels: boolean; waypointLabelInterval: number } } | undefined>();
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 

@@ -75,7 +75,7 @@ Below the map. Each column is a waypoint along the route, left to right in time.
 
 In the Settings gear icon:
 
-- **Coast avoidance** — enabled by default
+- **Coast avoidance** — enabled by default; turning it off is not yet supported by the router, so an unchecked box stops the calculation with an error
 - **Safety margin** — dilates coastline by 0.5 NM
 - **Motor** — threshold wind speed and motor speed for light-wind legs
 - **Wait for wind** — hold position through calm patches instead of giving up

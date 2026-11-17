@@ -3,6 +3,7 @@
 import type * as maplibregl from 'maplibre-gl';
 import { routeBbox } from '../src/lib/geo';
 import { sortByBearing, splitByAngularGap } from './utils';
+import { landIndexFile } from './saved-routing-settings';
 import type { RoutingPreferences } from '../src/types';
 
 export interface IsochroneState {
@@ -18,8 +19,6 @@ interface RoutingRequest {
   departureTime: string;
   waypoints?: { lat: number; lon: number }[] | undefined;
   polarCsv: string;
-  useLandAvoidance: boolean;
-  useSafetyMargin: boolean;
   options: RoutingPreferences;
 }
 
@@ -103,17 +102,12 @@ export function buildWorkerPayload(req: RoutingRequest): unknown {
         end: req.end,
         departureTime: req.departureTime,
         ...(req.waypoints && req.waypoints.length > 0 ? { waypoints: req.waypoints } : {}),
-        useLandAvoidance: req.useLandAvoidance,
         options: req.options,
       },
       polarCsv: req.polarCsv,
       tileBbox,
-      landIndexUrl: new URL(`${import.meta.env.BASE_URL}data/edge-index.bin.gz`, location.href).href,
-      dilatedIndexUrl: req.useSafetyMargin
-        ? new URL(`${import.meta.env.BASE_URL}data/dilated-edge-index.bin.gz`, location.href).href
-        : undefined,
+      landIndexUrl: new URL(`${import.meta.env.BASE_URL}data/${landIndexFile()}`, location.href).href,
       windModel: 'ecmwf',
-      useSafetyMargin: req.useSafetyMargin,
     },
   };
 }

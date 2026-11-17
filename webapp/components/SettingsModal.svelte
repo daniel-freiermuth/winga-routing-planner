@@ -1,4 +1,5 @@
 <script lang="ts">
+  // Settings dialog — polar, routing options (auto-saved to prefs), charts and SignalK login.
   import type { Map } from 'maplibre-gl';
   import { prefs, savePrefs } from '../prefs';
   import { authState } from '../auth-state.svelte';
@@ -76,7 +77,6 @@
 
   export function getOptions() {
     return {
-      useLandAvoidance: coastAvoidance,
       useSafetyMargin: safetyMargin,
       motorBelowKn: parseFloat(motorBelowKn) || undefined,
       motorSpeedKn: parseFloat(motorSpeedKn) || undefined,

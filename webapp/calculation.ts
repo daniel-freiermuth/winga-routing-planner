@@ -9,6 +9,7 @@ import { buildWorkerPayload, renderIsochrone, clearIsochrones } from './routing-
 import type { IsochroneState } from './routing-engine';
 import { routePointsToRouteData, findScrubberPosition } from './route-meta';
 import type { WorkerRoutePoint } from './route-meta';
+import { unsupportedSettingError } from './saved-routing-settings';
 
 interface LatLon {
   lat: number;
@@ -20,8 +21,6 @@ const DISABLED = 0;
 
 interface RoutingOptionsLike {
   getOptions: () => {
-    useLandAvoidance: boolean;
-    useSafetyMargin: boolean;
     motorBelowKn: number | undefined;
     motorSpeedKn: number | undefined;
     waitForWind: boolean | undefined;
@@ -262,6 +261,13 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
       return;
     }
 
+    const settingError = unsupportedSettingError();
+    if (settingError !== undefined) {
+      ctx.setStatus('error', settingError);
+      ctx.setCalculating(false);
+      return;
+    }
+
     // Unwrap Svelte $state proxies — structured cloning (postMessage) can't handle Proxy objects
     const plainStart = { lat: startLatLon.lat, lon: startLatLon.lon };
     const plainEnd = { lat: endLatLon.lat, lon: endLatLon.lon };
@@ -274,8 +280,6 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
         departureTime: new Date(depTime).toISOString(),
         waypoints: plainWaypoints.length > 0 ? plainWaypoints : undefined,
         polarCsv,
-        useLandAvoidance: opts?.useLandAvoidance ?? true,
-        useSafetyMargin: opts?.useSafetyMargin ?? false,
         options: {
           maxWindKn: opts?.maxWindKn ?? DISABLED,
           maxWaveM: DISABLED,
