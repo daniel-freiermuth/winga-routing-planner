@@ -14,7 +14,6 @@ export interface WorkerRoutePoint {
   boatSpeed?: number;
   windDir: number;
   waveHeight?: number;
-  gribFilePath?: string;
   gustKn?: number;
   currentU?: number;
   currentV?: number;
@@ -39,7 +38,6 @@ function toMeta(p: WorkerRoutePoint, prev: WorkerRoutePoint | undefined): Waypoi
   };
   if (p.boatSpeed != null) meta.boatSpeed = p.boatSpeed;
   if (p.waveHeight != null) meta.waveHeight = p.waveHeight;
-  if (p.gribFilePath != null) meta.gribFile = p.gribFilePath;
   if (p.gustKn != null) meta.gustKn = p.gustKn;
   if (p.wavePeriod != null) meta.wavePeriod = p.wavePeriod;
   if (p.waveDir != null) meta.waveDir = p.waveDir;

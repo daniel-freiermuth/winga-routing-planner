@@ -20,7 +20,7 @@
   import Disclaimer from './Disclaimer.svelte';
   import MapContextMenu from './MapContextMenu.svelte';
 
-  import type { WaypointMeta, RouteData, UnitPref, GribFileMeta } from '../types';
+  import type { WaypointMeta, RouteData, UnitPref } from '../types';
   import type { CalculationApi } from '../calculation';
   import type { SkDeps } from '../sk-resources';
   import type { ConfigCallbacks } from '../config';
@@ -34,8 +34,7 @@
   import { fmt as _fmt } from '../units';
   import { toLocalDateTimeInput } from '../utils';
   import * as forecaster from '../forecast-fetcher';
-  import { computeLabel, computeCoverageHtml, computeNowMarkerLeft, findNowIndex } from '../scrubber-controller';
-  import type { ScrubberState } from '../scrubber-controller';
+  import { computeLabel, computeNowMarkerLeft, findNowIndex } from '../scrubber-controller';
   import { createTimeAxis, loadWindyTimes, rebuildTimes } from '../time-axis';
   import { setupCalculation } from '../calculation';
   import { greenIcon, redIcon, setupInfoPopupClick, setupViewportRefresh } from '../map-interaction';
@@ -212,20 +211,15 @@
 
   let regionOverlayRef: { getAvoidIds: () => string[]; reload: () => Promise<void>; toggleAvoid: (id: string, avoid: boolean) => void } | undefined;
   let regionListData = $state<{ id: string; name: string; avoided: boolean }[]>([]);
-  let currentEnabled = true;
   let windTimes = $state<string[]>([]);
   let windTimesCount = 0;
   let windNativeTimes: string[] = [];
-  let currentFileTimes: string[] = [];
-  let gribInfoFiles: GribFileMeta[] = [];
   let dilatedIndexReady = false;
-  let enabledGribPaths = new Set<string>();
   let timeAxis = createTimeAxis();
 
   // Scrubber reactive state
   let scrubberIndex = $state(0);
   let scrubberLabel = $state('');
-  let coverageHtml = $state('');
   let nowMarkerLeft = $state<string | null>(null);
   let showRangeToggle = $state(false);
   let rangeToggleLabel = $state('Full range');
@@ -287,15 +281,10 @@
     await forecaster.fetchCurrentPoints(timeMs, mapRef!, signal);
   }
 
-  function scrubberState(): ScrubberState {
-    return { windTimes, scrubberLockedToRoute: calcState.scrubberLockedToRoute, routeScrubberRange: calcState.routeScrubberRange, graphMeta: calcState.graphMeta, gribInfoFiles, enabledGribPaths, currentEnabled, currentFileTimes };
-  }
-
   /** Update all scrubber-derived reactive state from current windTimes / range. */
   function updateScrubberView() {
     const rangeStart = calcState.scrubberLockedToRoute && calcState.routeScrubberRange ? calcState.routeScrubberRange.i0 : 0;
     const rangeEnd = calcState.scrubberLockedToRoute && calcState.routeScrubberRange ? calcState.routeScrubberRange.iN : Math.max(0, windTimes.length - 1);
-    coverageHtml = computeCoverageHtml(rangeStart, rangeEnd, scrubberState());
     nowMarkerLeft = computeNowMarkerLeft(rangeStart, rangeEnd, windTimes);
     scrubberLabel = computeLabel(scrubberIndex, windTimes);
   }
@@ -338,10 +327,8 @@
       void fetchWindPointsAt(idx, windAbort.signal);
       void fetchWavePointsAt(idx, waveAbort.signal);
       const timeMs = windTimes[idx] ? new Date(windTimes[idx]).getTime() : Date.now();
-      if (currentEnabled || forecaster.getCurrentPoints().length > 0) {
-        currentAbort?.abort(); currentAbort = new AbortController();
-        void fetchCurrentPointsAt(timeMs, currentAbort.signal);
-      }
+      currentAbort?.abort(); currentAbort = new AbortController();
+      void fetchCurrentPointsAt(timeMs, currentAbort.signal);
       calcApi?.updateScrubberHighlight(idx);
     }, 100);
   }
@@ -605,7 +592,6 @@
       showFailurePopup: handleShowFailurePopup,
       fetchWindPointsAt: (idx: number) => fetchWindPointsAt(idx),
       fetchWavePointsAt: (idx: number) => fetchWavePointsAt(idx),
-      scrubberState,
       getStartLatLon: () => skState.startLatLon,
       getEndLatLon: () => skState.endLatLon,
       getRouteWaypoints: () => skState.routeWaypoints,
@@ -905,7 +891,6 @@
     {scrubberIndex}
     lockedRange={calcState.scrubberLockedToRoute ? calcState.routeScrubberRange : null}
     label={scrubberLabel}
-    {coverageHtml}
     {nowMarkerLeft}
     {showRangeToggle}
     {rangeToggleLabel}

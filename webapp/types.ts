@@ -9,7 +9,6 @@ export interface WaypointMeta {
   tws: number;
   boatSpeed?: number;
   waveHeight?: number;
-  gribFile?: string;
   gustKn?: number;
   currentSpeedKn?: number;
   currentDir?: number; // degrees, direction current flows TOWARDS
@@ -37,16 +36,3 @@ export interface UnitPref {
 }
 
 export type UnitCategory = 'speed' | 'depth' | 'distance';
-
-export interface GribFileMeta {
-  path: string;
-  type?: string;
-  latMin: number;
-  latMax: number;
-  lonMin: number;
-  lonMax: number;
-  timeStart: string;
-  timeEnd: string;
-  nTimes: number;
-  referenceTime?: string;
-}

@@ -4,7 +4,6 @@
 import * as maplibregl from 'maplibre-gl';
 import { calcState, removeSourceAndLayer } from './calc-state.svelte';
 import type { RouteData } from './types';
-import type { ScrubberState } from './scrubber-controller';
 import { drawRoute } from './route-display';
 import { buildWorkerPayload, renderIsochrone, clearIsochrones } from './routing-engine';
 import type { IsochroneState } from './routing-engine';
@@ -47,7 +46,6 @@ interface CalculationContext {
   showFailurePopup(msg: string, isWarning: boolean): void;
   fetchWindPointsAt(timeIdx: number): Promise<void>;
   fetchWavePointsAt(timeIdx: number): Promise<void>;
-  scrubberState(): ScrubberState;
 
   // Route-result callbacks (replace getElementById)
   lockScrubberToRoute(i0: number, iN: number): void;
