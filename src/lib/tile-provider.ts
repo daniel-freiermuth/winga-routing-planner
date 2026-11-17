@@ -1,5 +1,5 @@
-// TileWindProvider / TileCurrentProvider: WindProvider and CurrentProvider
-// implementations backed by pre-fetched Windy forecast tiles.
+// TileWindProvider / TileCurrentProvider: wind/wave and ocean-current samplers
+// backed by pre-fetched Windy forecast tiles.
 //
 // ARCHITECTURE
 // ────────────
@@ -14,7 +14,7 @@
 //   1. Construct with model and optional zoom level.
 //   2. Call load(bbox) — fetches model metadata and sets up tile grid.
 //   3. Call prefetchForTime(timeMs) — lazily fetches tile data for a time bracket.
-//   4. Use getWind / getWave — fully synchronous after prefetch.
+//   4. Use getWindAtTime / getWaveAtTime — fully synchronous after prefetch.
 //   5. Call load(expandedBbox) again on corridor expansion — resets tile grid,
 //      keeps cached tiles (they remain valid at new positions).
 //
@@ -49,7 +49,7 @@ import {
   browserRgbaDecoder,
 } from '@winga-weather-routing/windy-lib';
 import type { WindyModelKey, WindyTileHeader } from '@winga-weather-routing/windy-lib';
-import type { BoundingBox, CurrentProvider, GribFileMeta, WindProvider, WindVector } from '../types';
+import type { BoundingBox, WindVector } from '../types';
 import { lonInFrame } from './geo';
 
 // Tile column x=0 starts at -180°; positions are wrapped into [-180, 180) before tile lookup
@@ -143,7 +143,7 @@ export interface TileWindProviderOptions {
  * wp.getWindAtTime(lat, lon, timeMs);
  * ```
  */
-export class TileWindProvider implements WindProvider {
+export class TileWindProvider {
   readonly times: Date[] = [];
 
   private readonly windModel: string;
@@ -165,7 +165,7 @@ export class TileWindProvider implements WindProvider {
   }
 
   /** Load metadata (model runs, time steps, tile grid). No tiles fetched yet. */
-  async load(bbox: BoundingBox, _fromMs?: number, _toMs?: number): Promise<void> {
+  async load(bbox: BoundingBox): Promise<void> {
     const [windMf, waveMf] = await Promise.all([fetchMinifest(this.windModel), fetchMinifest(this.waveModel)]);
 
     this.windModelRun = refToCompact(windMf.ref);
@@ -259,19 +259,6 @@ export class TileWindProvider implements WindProvider {
       }
     }
     if (fetches.length > 0) await Promise.all(fetches);
-  }
-
-  getWind(lat: number, lon: number, timeIdx: number): WindVector {
-    const step = this.windSteps[this.stepIdxForTimeIdx(timeIdx)];
-    if (step === undefined) return { u: 0, v: 0 };
-    return this.sampleWind(lat, lon, step.compact);
-  }
-
-  getWave(lat: number, lon: number, t: Date): number | undefined {
-    const idx = closestStepIdx(this.waveSteps, t.getTime(), this.waveStepsMs);
-    const step = this.waveSteps[idx];
-    if (step === undefined) return undefined;
-    return this.sampleWaveTile(lat, lon, step.compact)?.height;
   }
 
   // Cache the last time-bracket index to avoid repeated binary searches
@@ -433,13 +420,6 @@ export class TileWindProvider implements WindProvider {
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
-  /** Map a times[] index to the closest wind step index. */
-  private stepIdxForTimeIdx(timeIdx: number): number {
-    const t = this.times[timeIdx];
-    if (t === undefined) return 0;
-    return closestStepIdx(this.windSteps, t.getTime(), this.windStepsMs);
-  }
-
   private sampleWind(lat: number, lon: number, validTime: string): WindVector {
     lon = lonInFrame(lon, TILE_GRID_WEST_LON);
     const { x, y } = latLonToTile(lat, lon, this.zoom);
@@ -465,9 +445,8 @@ export class TileWindProvider implements WindProvider {
  * Pre-fetch CMEMS ocean current tiles for a geographic area and time range,
  * then provide synchronous current lookups for the routing algorithm.
  */
-export class TileCurrentProvider implements CurrentProvider {
+export class TileCurrentProvider {
   readonly times: Date[] = [];
-  readonly meta: GribFileMeta;
 
   private readonly zoom: number;
   private readonly cache = new Map<string, CachedTile>();
@@ -479,22 +458,6 @@ export class TileCurrentProvider implements CurrentProvider {
 
   constructor(zoom = 3) {
     this.zoom = zoom;
-    // Synthetic meta for the routing algorithm (only used by UI, not routing core).
-    this.meta = {
-      path: 'windy/cmems',
-      mtime: Date.now(),
-      type: 'current',
-      latMin: -90,
-      latMax: 90,
-      lonMin: -180,
-      lonMax: 180,
-      latStep: 0.1,
-      lonStep: 0.1,
-      timeStart: new Date(),
-      timeEnd: new Date(),
-      nTimes: 0,
-      referenceTime: new Date(),
-    };
   }
 
   async load(bbox: BoundingBox, fromMs: number, toMs: number): Promise<void> {
@@ -515,16 +478,6 @@ export class TileCurrentProvider implements CurrentProvider {
     const sortedMs = [...timesSet].sort((a, b) => a - b);
     this.times.length = 0;
     this.times.push(...sortedMs.map((ms) => new Date(ms)));
-
-    // Update synthetic meta
-    this.meta.timeStart = this.times[0] ?? new Date();
-    this.meta.timeEnd = this.times[this.times.length - 1] ?? new Date();
-    this.meta.nTimes = this.times.length;
-    this.meta.referenceTime = new Date(mf.ref);
-    this.meta.latMin = bbox.latMin;
-    this.meta.latMax = bbox.latMax;
-    this.meta.lonMin = bbox.lonMin;
-    this.meta.lonMax = bbox.lonMax;
 
     const fetches: Promise<void>[] = [];
     for (const t of this.tiles) {
