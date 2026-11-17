@@ -5,7 +5,6 @@ import * as maplibregl from 'maplibre-gl';
 import { calcState, removeSourceAndLayer } from './calc-state.svelte';
 import type { RouteData } from './types';
 import type { ScrubberState } from './scrubber-controller';
-import { fmt as _fmt } from './units';
 import { drawRoute } from './route-display';
 import { buildWorkerPayload, renderIsochrone, clearIsochrones } from './routing-engine';
 import type { IsochroneState } from './routing-engine';
@@ -31,8 +30,6 @@ interface RoutingOptionsLike {
     maxWaveM: number | undefined;
     tackPenaltySec: number;
     tackThresholdDeg: number;
-    waypointLabels: boolean;
-    waypointLabelInterval: number;
   };
 }
 
@@ -64,7 +61,6 @@ interface CalculationContext {
   getEndLatLon(): LatLon | null;
   getRouteWaypoints(): LatLon[];
   getRoutingOptions(): RoutingOptionsLike | null;
-  getWindSpeedMs(): boolean;
   getWindTimes(): string[];
   getWindTimesLoaded(): boolean;
   getDepartureTime(): string;
@@ -96,33 +92,15 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
   function drawRouteFromData(route: RouteData) {
     try {
       if (calcState.routeLayer) removeSourceAndLayer(map, calcState.routeLayer);
-      for (const m of calcState.windBarbLayer) m.remove();
-      if (calcState.legLabelLayer) removeSourceAndLayer(map, calcState.legLabelLayer);
       if (calcState.highlightLegLayer) {
         removeSourceAndLayer(map, calcState.highlightLegLayer);
         calcState.highlightLegLayer = null;
       }
-      calcState.windBarbMarkers = [];
       calcState.routeLegCoords = [];
       calcState.prevHighlightWpIdx = -1;
-      const routingOptions = ctx.getRoutingOptions();
-      const result = drawRoute(route, {
-        map,
-        fmt: _fmt,
-        windSpeedMs: ctx.getWindSpeedMs(),
-        getWaypointLabels: () => {
-          const opts = routingOptions?.getOptions();
-          return { labels: opts?.waypointLabels ?? true, intervalH: opts?.waypointLabelInterval ?? 0 };
-        },
-        setStatus: (type: string, msg: string) => {
-          ctx.setStatus(type, msg);
-        },
-      });
+      const result = drawRoute(route, map);
       if (!result) return;
       calcState.routeLayer = result.routeLayer;
-      calcState.windBarbLayer = result.windBarbLayer;
-      calcState.legLabelLayer = result.legLabelLayer;
-      calcState.windBarbMarkers = result.windBarbMarkers;
       calcState.routeLegCoords = result.routeLegCoords;
 
       // Click on route → find closest waypoint and jump scrubber there
@@ -213,13 +191,6 @@ export function setupCalculation(ctx: CalculationContext): CalculationApi {
     const { wpIdx } = findScrubberPosition(calcState.graphMeta, tMs);
     if (wpIdx === calcState.prevHighlightWpIdx) return;
     calcState.prevHighlightWpIdx = wpIdx;
-
-    // Update wind barb opacity
-    for (let i = 0; i < calcState.windBarbMarkers.length; i++) {
-      const m = calcState.windBarbMarkers[i];
-      if (!m) continue;
-      m.getElement().style.opacity = i === wpIdx ? '1' : '0.4';
-    }
 
     // Place/move red circle marker at the selected waypoint
     if (wpIdx >= 0 && calcState.routeLegCoords[wpIdx]) {

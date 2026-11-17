@@ -610,7 +610,6 @@
       getEndLatLon: () => skState.endLatLon,
       getRouteWaypoints: () => skState.routeWaypoints,
       getRoutingOptions: () => settingsModalRef ?? null,
-      getWindSpeedMs: () => configState.windSpeedMs,
       getWindTimes: () => windTimes,
       getWindTimesLoaded: () => windTimesLoaded,
       getPolarCsv: () => polarCsv ?? undefined,
