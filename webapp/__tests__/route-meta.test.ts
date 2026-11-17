@@ -88,7 +88,6 @@ void test('routePointsToRouteData: absent optional fields are omitted; zero valu
     pt(51, 1, T6H, {
       boatSpeed: 0,
       waveHeight: 0,
-      gribFilePath: 'f.grb',
       gustKn: 0,
       wavePeriod: 0,
       waveDir: 0,
@@ -96,12 +95,11 @@ void test('routePointsToRouteData: absent optional fields are omitted; zero valu
       wowDir: 0,
     }),
   ]);
-  for (const key of ['boatSpeed', 'waveHeight', 'gribFile', 'gustKn', 'wavePeriod', 'waveDir', 'wowTws', 'wowDir']) {
+  for (const key of ['boatSpeed', 'waveHeight', 'gustKn', 'wavePeriod', 'waveDir', 'wowTws', 'wowDir']) {
     assert.ok(!Object.hasOwn(bare ?? {}, key), `${key} should be omitted`);
   }
   assert.equal(zeros?.boatSpeed, 0);
   assert.equal(zeros.waveHeight, 0);
-  assert.equal(zeros.gribFile, 'f.grb');
   assert.equal(zeros.gustKn, 0);
   assert.equal(zeros.wavePeriod, 0);
   assert.equal(zeros.waveDir, 0);

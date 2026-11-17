@@ -57,7 +57,6 @@ export interface RoutePoint {
   windDir: number; // meteorological: degrees FROM which wind blows, 0–360
   legCalcMs: number; // wall-clock ms the algorithm spent computing this leg; 0 for start and destination
   waveHeight?: number | undefined; // significant wave height (m), present when swh data available in GRIB
-  gribFilePath?: string | undefined; // path of the GRIB file that supplied weather data at this waypoint
   gustKn?: number | undefined; // gust speed (knots), present when gust data available
   currentU?: number | undefined; // ocean current east component (m/s)
   currentV?: number | undefined; // ocean current north component (m/s)

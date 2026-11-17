@@ -4,7 +4,6 @@
     scrubberIndex: number;
     lockedRange: { i0: number; iN: number } | null;
     label: string;
-    coverageHtml: string;
     nowMarkerLeft: string | null;
     showRangeToggle: boolean;
     rangeToggleLabel: string;
@@ -15,7 +14,7 @@
     onUseAsDeparture: (timeIso: string) => void;
   }
   let {
-    windTimes, scrubberIndex, lockedRange, label, coverageHtml,
+    windTimes, scrubberIndex, lockedRange, label,
     nowMarkerLeft, showRangeToggle, rangeToggleLabel,
     visible, onIndexChange, onJumpToNow, onToggleRange, onUseAsDeparture,
   }: Props = $props();
@@ -49,7 +48,6 @@
         {#if nowMarkerLeft != null}
           <div class="now-marker" style:left={nowMarkerLeft}></div>
         {/if}
-        <div class="coverage-bar">{@html coverageHtml}</div>
         <input type="range" {min} {max} value={scrubberIndex} oninput={handleInput} />
       </div>
       <button class="btn-jump-now" title="Jump scrubber to current time" onclick={onJumpToNow}>Now</button>
@@ -116,15 +114,9 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
     min-width: 0;
     position: relative;
-    padding-top: 8px;
-  }
-  .coverage-bar {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
+    padding-top: 10px;
   }
   .now-marker {
     position: absolute;
