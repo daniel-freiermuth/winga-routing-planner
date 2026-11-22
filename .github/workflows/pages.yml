@@ -38,9 +38,9 @@ jobs:
           cd webapp/public/data
           for f in *.bin.gz; do cp --remove-destination "$(readlink "$f")" "$f"; done
       - run: pnpm build:webapp
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist/webapp
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         id: deploy
