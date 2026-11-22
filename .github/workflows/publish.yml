@@ -1,3 +1,4 @@
+# Release pipeline: on a v* tag, builds and tests the plugin, then publishes it to npm with provenance.
 name: Publish
 on:
   push:
@@ -11,13 +12,13 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - uses: jetli/wasm-pack-action@v0.4.0
       - uses: pnpm/action-setup@v6.1.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'

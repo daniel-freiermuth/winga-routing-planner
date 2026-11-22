@@ -1,3 +1,4 @@
+# CI gate: runs the full Rust + TypeScript check suite (pnpm check:all) on every push and PR to main.
 name: CI
 on:
   push:
@@ -11,14 +12,14 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
       - uses: jetli/wasm-pack-action@v0.4.0
       - uses: pnpm/action-setup@v6.1.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'pnpm'
